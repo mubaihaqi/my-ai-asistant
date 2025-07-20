@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+#kezia personality
+/public/kezia.jpg
+/public/kezia-full.png

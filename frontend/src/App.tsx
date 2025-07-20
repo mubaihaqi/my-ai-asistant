@@ -112,22 +112,28 @@ function App() {
   return (
     <div className="flex flex-col h-screen font-sans antialiased bg-gray-900 text-gray-100">
       {/* Background gambar dan efek blur */}
-      <div
-        className="absolute inset-0 bg-cover bg-center transition-all duration-500"
-        style={{
-          backgroundImage: `url('https://picsum.photos/seed/modern-ui/1920/1080')`,
-        }}
-      />
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-md" />
+      <video
+        className="absolute inset-0 w-full h-full object-cover transition-all duration-500"
+        autoPlay
+        loop
+        muted
+        playsInline
+      >
+        <source src="/totoro.mp4" type="video/mp4" />
+        Your browser does not support the video tag.
+      </video>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px]" />
 
       {/* Konten utama aplikasi */}
       <div className="relative z-10 flex flex-col h-full">
         {/* Header berisi nama AI dan status online */}
         <header className="bg-gray-900/70 p-4 border-b border-gray-700/50 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-violet-600 flex items-center justify-center text-white font-bold shadow-inner">
-              K
-            </div>
+            <img
+              src="/kezia.jpg"
+              alt="Kezia Amara"
+              className="w-10 h-10 rounded-full object-cover shadow-inner"
+            />
             <h1 className="text-lg font-bold text-gray-200">Kezia Amara</h1>
           </div>
           <div className="flex items-center space-x-2">
@@ -151,16 +157,16 @@ function App() {
               }`}
             >
               {/* Avatar AI jika pengirimnya AI */}
-              {msg.sender === "ai" && (
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-violet-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-inner">
+              {/* {msg.sender === "ai" && (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-700 to-purple-800 flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-inner">
                   A
                 </div>
-              )}
+              )} */}
               {/* Bubble chat untuk pesan */}
               <div
                 className={`max-w-xs sm:max-w-md md:max-w-lg p-3 px-4 rounded-2xl shadow-md transition-all duration-300 ${
                   msg.sender === "user"
-                    ? "bg-violet-600 text-white rounded-br-lg"
+                    ? "bg-indigo-700 text-white rounded-br-lg"
                     : "bg-gray-800 text-gray-200 rounded-bl-lg"
                 }`}
               >
@@ -174,9 +180,9 @@ function App() {
           {/* Animasi loading saat menunggu balasan AI */}
           {isLoading && (
             <div className="flex items-end gap-3 justify-start">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-violet-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+              {/* <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-700 to-purple-800 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                 A
-              </div>
+              </div> */}
               <div className="max-w-sm p-4 rounded-2xl rounded-bl-lg bg-gray-800">
                 <div className="flex items-center space-x-2">
                   <span className="h-2 w-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
@@ -206,7 +212,7 @@ function App() {
               }}
               disabled={isLoading}
               placeholder="Tulis pesan..."
-              className="w-full max-h-40 pr-10 p-3 px-4 bg-gray-800 border border-transparent rounded-2xl text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500 transition-all resize-none overflow-y-auto"
+              className="w-full max-h-40 pr-10 p-3 px-4 bg-gray-800 border border-transparent rounded-2xl text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all resize-none overflow-y-auto"
             />
             {/* icon attach */}
             <button
@@ -222,7 +228,7 @@ function App() {
           <button
             onClick={sendMessage}
             disabled={isLoading || !inputMessage.trim()}
-            className="w-12 h-12 rounded-full bg-gradient-to-br from-violet-600 to-pink-500 text-white flex items-center justify-center transition-all duration-300 ease-in-out shadow-lg hover:shadow-xl hover:from-violet-700 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-700 to-purple-800 text-white flex items-center justify-center transition-all duration-300 ease-in-out shadow-lg hover:shadow-xl hover:from-indigo-800 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <SendHorizontal size={20} />
           </button>
