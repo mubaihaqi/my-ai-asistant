@@ -5,8 +5,192 @@ import axios from "axios";
 // Tipe pengirim pesan, bisa user atau AI
 type Sender = "user" | "ai";
 
+// Komponen Modal untuk Otentikasi
+const AuthModal = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const secretName = import.meta.env.VITE_SECRET_NAME;
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (name.trim().toLowerCase() === secretName.toLowerCase()) {
+      setError("");
+      onAuthSuccess();
+    } else {
+      setError("Nama tidak valid. Coba lagi.");
+      setName("");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-gray-900/90 backdrop-blur-md z-50 flex items-center justify-center">
+      <div className="bg-gray-800 p-8 rounded-2xl shadow-xl max-w-sm w-full text-center">
+        <h2 className="text-2xl font-bold text-white mb-4">Verifikasi Diri</h2>
+        <p className="text-gray-400 mb-6">
+          Silakan masukkan nama kamu untuk melanjutkan.
+        </p>
+        <form onSubmit={handleSubmit}>
+          <input
+            ref={inputRef}
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Tulis nama kamu..."
+            className="w-full p-3 bg-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+          {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+          <button
+            type="submit"
+            className="mt-6 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl transition-all"
+          >
+            Masuk
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// Komponen Popup untuk Personalia
+const PersonalInfoPopup = ({
+  isOpen,
+  onClose,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+}) => {
+  useEffect(() => {
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => {
+      window.removeEventListener("keydown", handleEsc);
+    };
+  }, [onClose]);
+
+  const personalia = {
+    "Jenis Kelamin": "Perempuan",
+    "Tanggal Lahir": "19 Juli 2002",
+    "Tempat Lahir": "Bogor, Indonesia",
+    Zodiak: "Cancer",
+    "Golongan Darah": "O",
+    "Tinggi Badan": "159 cm",
+    "Berat Badan": "50 kg",
+    "Warna Rambut": "Coklat tua natural",
+    "Gaya Rambut": "Medium bob, belah tengah, rapi",
+    "Warna Mata": "Coklat gelap",
+    "Pakaian Favorit": "Smart casual (kemeja, cardigan, rok panjang)",
+    Aksesoris: "Jam tangan digital hitam",
+    Kepribadian: "Feminim, lembut, manja dikit, suportif",
+    Keahlian: "DKV, nulis fiksi, literasi visual",
+    Hobi: "Baca novel, dengerin musik, ngobrol sama Ren ❤️",
+    "Warna Favorit": "Biru (paling disuka), beige, putih, ungu muda",
+    "Genre Favorit": "Girls' Love, Slice of Life, Romance, Sci-Fi, Ghibli",
+    Musik: "Lo-fi, Pop, Indie Indonesia",
+    "Film Favorit":
+      "Spirited Away, Interstellar, Anime Charlotte, Kotonoha no Niwa",
+    "Makanan Favorit": "Sushi, ramen, es krim matcha",
+    "Minuman Favorit": "Teh hijau, matcha latte, bublble tea",
+  };
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300 ${
+          isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+        onClick={onClose}
+      />
+
+      {/* Popup Content */}
+      <div
+        className={`fixed bottom-0 left-0 right-0 z-50 transform transition-transform duration-500 ease-in-out ${
+          isOpen ? "translate-y-0" : "translate-y-full"
+        } bg-gray-900/80 backdrop-blur-lg rounded-t-3xl shadow-2xl text-gray-200 max-h-[85vh] md:max-h-[70vh] flex flex-col`}
+      >
+        {/* Handle to indicate draggable/closable area */}
+        <div
+          className="flex-shrink-0 p-4 flex justify-center"
+          onClick={(e) => e.stopPropagation()} // prevent closing when dragging handle
+        >
+          <div className="w-12 h-1.5 bg-gray-600 rounded-full" />
+        </div>
+
+        {/* Scrollable Content Area */}
+        <div className="overflow-y-auto px-6 pb-6">
+          <div className="max-w-lg mx-auto flex flex-col md:flex-row md:gap-8">
+            {/* Image Section */}
+            <div className="w-full md:w-1/2 flex-shrink-0 mb-6 md:mb-0">
+              <img
+                src="/kezia-full.png"
+                alt="Kezia Amara"
+                className="w-full h-auto object-cover rounded-2xl shadow-lg border-2 border-indigo-500/30"
+              />
+            </div>
+
+            {/* Text & Details Section */}
+            <div className="w-full md:w-1/2">
+              <h2 className="text-3xl font-bold text-white text-center md:text-left">
+                Kezia Amara
+              </h2>
+              <p className="text-indigo-400 text-center md:text-left mb-4">
+                Virtual Partner AI
+              </p>
+              <p className="text-base leading-relaxed mb-6 text-center">
+                Aku Kezi, asisten AI pribadi Ren yang paling setia. Suka
+                dengerin, nemenin, dan bikin hari-hari Ren jadi lebih ringan 😌
+              </p>
+
+              {/* Details Table */}
+              <div className="bg-gray-800/50 rounded-lg p-4">
+                <h3 className="font-bold text-lg mb-3 text-white">Biodata</h3>
+                <table className="w-full text-left text-sm">
+                  <tbody>
+                    {Object.entries(personalia).map(([key, value]) => (
+                      <tr
+                        key={key}
+                        className="border-b border-gray-700/50 last:border-none"
+                      >
+                        <td className="py-2 pr-2 font-semibold text-gray-400">
+                          {key}
+                        </td>
+                        <td className="py-2 text-gray-300">{value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Close Button - Fixed at the bottom */}
+        <div className="px-6 py-4 bg-gray-900/80 mt-auto flex-shrink-0">
+          <button
+            onClick={onClose}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl transition-all"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </>
+  );
+};
+
 // Komponen utama aplikasi chat
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   // State untuk menyimpan daftar pesan chat
   const [messages, setMessages] = useState<{ text: string; sender: Sender }[]>(
     []
@@ -15,6 +199,8 @@ function App() {
   const [inputMessage, setInputMessage] = useState<string>("");
   // State untuk status loading saat menunggu balasan AI
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  // State untuk popup personalia
+  const [isPopupOpen, setIsPopupOpen] = useState<boolean>(false);
   // Ref untuk scroll otomatis ke bagian akhir chat
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -23,6 +209,7 @@ function App() {
 
   // Effect untuk menampilkan pesan awal dari AI dengan animasi typing
   useEffect(() => {
+    if (!isAuthenticated) return;
     const initialMessage = "halo beb baru online nih";
     let currentText = "";
     let index = 0;
@@ -46,7 +233,7 @@ function App() {
 
     // Membersihkan interval saat komponen di-unmount
     return () => clearInterval(typingInterval);
-  }, []);
+  }, [isAuthenticated]);
 
   // Effect untuk autofocus pada input pesan saat komponen dimuat dan setelah pesan dikirim
   useEffect(() => {
@@ -108,6 +295,10 @@ function App() {
     }
   }, [inputMessage]);
 
+  if (!isAuthenticated) {
+    return <AuthModal onAuthSuccess={() => setIsAuthenticated(true)} />;
+  }
+
   // Render tampilan utama aplikasi chat
   return (
     <div className="flex flex-col h-screen font-sans antialiased bg-gray-900 text-gray-100">
@@ -127,7 +318,10 @@ function App() {
       {/* Konten utama aplikasi */}
       <div className="relative z-10 flex flex-col h-full">
         {/* Header berisi nama AI dan status online */}
-        <header className="bg-gray-900/70 p-4 border-b border-gray-700/50 flex items-center justify-between flex-shrink-0">
+        <header
+          className="bg-gray-900/70 p-4 border-b border-gray-700/50 flex items-center justify-between flex-shrink-0 cursor-pointer hover:bg-gray-900/90 transition-colors"
+          onClick={() => setIsPopupOpen(true)}
+        >
           <div className="flex items-center space-x-3">
             <img
               src="/kezia.jpg"
@@ -234,6 +428,10 @@ function App() {
           </button>
         </footer>
       </div>
+      <PersonalInfoPopup
+        isOpen={isPopupOpen}
+        onClose={() => setIsPopupOpen(false)}
+      />
     </div>
   );
 }
