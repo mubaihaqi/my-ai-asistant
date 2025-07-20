@@ -6,12 +6,12 @@ import { getMessagesForFrontend } from "./database";
 // Logging informasi saat server dijalankan
 console.log(`[${new Date().toISOString()}] Starting Bun backend server...`);
 // console.log(`[${new Date().toISOString()}] Using AI model: ${MODEL_NAME}`); // MODEL_NAME is now in gemini/index.ts
-const personaPreviewLine = systemInstructionContent.split("\n")[1];
-console.log(
-  `[${new Date().toISOString()}] Initializing with persona preview: "${
-    personaPreviewLine ? personaPreviewLine.trim() : "No preview available"
-  }..."`
-);
+// const personaPreviewLine = systemInstructionContent.split("\n")[1];
+// console.log(
+//   `[${new Date().toISOString()}] Initializing with persona preview: "${
+//     personaPreviewLine ? personaPreviewLine.trim() : "No preview available"
+//   }..."`
+// );
 
 // Inisialisasi dan konfigurasi server Bun
 Bun.serve({

@@ -58,9 +58,12 @@ export async function saveMessageToDB(
     return;
   }
   try {
+    const createdAt = new Date().toISOString();
+    const params = [sessionId, sender, text, imageUrl, createdAt];
+    console.log(`[saveMessageToDB] Attempting to save with params: ${JSON.stringify(params)}`);
     await pool.query(
-      `INSERT INTO messages (session_id, sender, text, image_url) VALUES ($1, $2, $3, $4)`,
-      [sessionId, sender, text, imageUrl]
+      `INSERT INTO messages (session_id, sender, text, image_url, created_at) VALUES ($1, $2, $3, $4, $5)`,
+      params
     );
     console.log(
       `[${new Date().toISOString()}] Message from ${sender} saved to Supabase.`
@@ -135,7 +138,7 @@ export async function getMessagesForFrontend(
     const params: (string | number)[] = [sessionId];
 
     if (beforeTimestamp) {
-      query += ` AND created_at < $2::timestamp`;
+      query += ` AND created_at < $2::timestamptz`;
       params.push(beforeTimestamp);
       query += ` ORDER BY created_at DESC LIMIT $3`;
       params.push(limit);
@@ -145,6 +148,7 @@ export async function getMessagesForFrontend(
     }
 
     const res = await pool.query(query, params);
+    console.log(`[getMessagesForFrontend] Executing query: ${query} with params: ${JSON.stringify(params)}`);
 
     // Return messages in descending order (newest first) for frontend display
     return res.rows.map((row) => ({

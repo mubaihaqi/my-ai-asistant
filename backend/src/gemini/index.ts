@@ -64,10 +64,7 @@ export async function handleChat(request: Request, corsHeaders: any) {
 
     // --- NEW: Simpan Pesan User ke Database ---
     try {
-      await pool.query(
-        `INSERT INTO messages (session_id, sender, text, image_url) VALUES ($1, $2, $3, $4)`,
-        ["single-user-session", "user", message, null]
-      );
+      await saveMessageToDB("single-user-session", "user", message, null);
       console.log(
         `[${new Date().toISOString()}] User message saved to Supabase.`
       );

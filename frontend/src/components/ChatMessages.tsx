@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useLayoutEffect } from "react";
+import React, { useRef, useEffect, useLayoutEffect, useState } from "react";
 
 type Sender = "user" | "ai";
 
@@ -7,6 +7,7 @@ interface ChatMessagesProps {
   isLoading: boolean;
   loadMoreMessages: () => void;
   hasMoreMessages: boolean;
+  shouldScrollToBottom: boolean; // Add new prop
 }
 
 const ChatMessages: React.FC<ChatMessagesProps> = ({
@@ -14,62 +15,68 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
   isLoading,
   loadMoreMessages,
   hasMoreMessages,
+  shouldScrollToBottom,
 }) => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const firstMessageRef = useRef<HTMLDivElement>(null);
+
+  const [showLoadMoreButton, setShowLoadMoreButton] = useState(false);
 
   useLayoutEffect(() => {
-    // Scroll to bottom only when new messages are added (i.e., messages.length increases)
-    // or when isLoading changes (e.g., AI response arrives)
-    if (
-      messages.length > 0 &&
-      (messages[messages.length - 1]?.sender === "user" ||
-        messages[messages.length - 1]?.sender === "ai")
-    ) {
+    if (shouldScrollToBottom && chatEndRef.current) {
       chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages.length, isLoading]);
+  }, [messages.length, isLoading, shouldScrollToBottom]);
 
   useEffect(() => {
-    const currentFirstMessageRef = firstMessageRef.current;
-    if (!currentFirstMessageRef || !hasMoreMessages) return;
+    const container = chatContainerRef.current;
+    if (!container) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          console.log(
-            "IntersectionObserver triggered! Loading more messages..."
-          );
-          loadMoreMessages();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(currentFirstMessageRef);
-
-    return () => {
-      if (currentFirstMessageRef) {
-        observer.unobserve(currentFirstMessageRef);
+    const handleScroll = () => {
+      if (container.scrollTop <= 5 && hasMoreMessages && !isLoading) {
+        setShowLoadMoreButton(true);
+      } else {
+        setShowLoadMoreButton(false);
       }
     };
-  }, [hasMoreMessages, loadMoreMessages]);
+
+    container.addEventListener('scroll', handleScroll);
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+    };
+  }, [hasMoreMessages, isLoading]);
 
   return (
     <main
       ref={chatContainerRef}
       className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6"
     >
-      {hasMoreMessages && (
-        <div className="text-center text-gray-400 text-sm mb-4">
-          Loading more messages...
+      {showLoadMoreButton && hasMoreMessages && !isLoading && (
+        <div className="text-center mb-4">
+          <button
+            onClick={loadMoreMessages}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
+          >
+            Load More Messages
+          </button>
         </div>
       )}
+
+      {isLoading && !showLoadMoreButton && (
+        <div className="text-center text-gray-400 text-sm mb-4">
+          Loading messages...
+        </div>
+      )}
+      {!hasMoreMessages && messages.length > 0 && (
+        <div className="text-center text-gray-400 text-sm mb-4">
+          No more messages.
+        </div>
+      )}
+
       {messages.map((msg, index) => (
         <div
           key={index}
-          ref={index === 0 ? firstMessageRef : null} // Attach ref to the first message
           className={`flex items-end gap-3 w-full ${
             msg.sender === "user" ? "justify-end" : "justify-start"
           }`}

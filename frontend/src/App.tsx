@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import AuthModal from "./components/AuthModal";
 import PersonalInfoPopup from "./components/PersonalInfoPopup";
@@ -20,14 +20,18 @@ function App() {
   const [authStatus, setAuthStatus] = useState<
     "pending" | "authenticated" | "unauthenticated"
   >("pending");
+  console.log("[App.tsx Render] App component rendering. Current authStatus:", authStatus);
   // State untuk menyimpan daftar pesan chat
   const [messages, setMessages] = useState<Message[]>([]);
   const [hasMoreMessages, setHasMoreMessages] = useState<boolean>(true);
-  const [oldestMessageTimestamp, setOldestMessageTimestamp] = useState<string | null>(null);
+  const [oldestMessageTimestamp, setOldestMessageTimestamp] = useState<
+    string | null
+  >(null);
   // State untuk input pesan user
   const [inputMessage, setInputMessage] = useState<string>("");
   // State untuk status loading saat menunggu balasan AI
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [shouldScrollToBottom, setShouldScrollToBottom] = useState<boolean>(true); // New state for scroll control
   // State untuk popup personalia
   const [isPopupOpen, setIsPopupOpen] = useState<boolean>(false);
 
@@ -67,6 +71,7 @@ function App() {
     };
 
     // Initial verification
+    console.log("[App.tsx verifyToken useEffect] Initial verification triggered.");
     verifyToken();
 
     // Set up interval for periodic verification
@@ -79,7 +84,7 @@ function App() {
   }, []);
 
   // Fungsi untuk memuat pesan dari backend
-  const fetchMessages = async (beforeTimestamp: string | null = null) => {
+  const fetchMessages = useCallback(async (beforeTimestamp: string | null = null) => {
     try {
       const token = localStorage.getItem("authToken");
       if (!token) {
@@ -92,6 +97,7 @@ function App() {
         url += `&before=${beforeTimestamp}`;
       }
 
+      console.log(`[fetchMessages] Requesting URL: ${url}`);
       const response = await axios.get(url, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -101,37 +107,58 @@ function App() {
       const fetchedMessages: Message[] = response.data
         .filter((msg: Message) => msg !== null && msg !== undefined)
         .map((msg: Message) => ({
-        text: msg.text,
-        sender: msg.sender,
-        created_at: msg.created_at,
-      }));
+          text: msg.text,
+          sender: msg.sender,
+          created_at: msg.created_at,
+        }));
+
+      console.log(
+        `[fetchMessages] Fetched ${fetchedMessages.length} messages.`
+      );
 
       if (fetchedMessages.length < 20) {
         setHasMoreMessages(false);
+        console.log("[fetchMessages] Setting hasMoreMessages to false.");
+      } else {
+        setHasMoreMessages(true); // Ensure it's true if 20 messages are returned
+        console.log("[fetchMessages] Setting hasMoreMessages to true.");
       }
 
       if (fetchedMessages.length > 0) {
-        // Update oldestMessageTimestamp with the created_at of the oldest fetched message
-        setOldestMessageTimestamp(fetchedMessages[fetchedMessages.length - 1].created_at || null);
+        const newOldestTimestamp =
+          fetchedMessages[fetchedMessages.length - 1].created_at || null;
+        setOldestMessageTimestamp(newOldestTimestamp);
+        console.log(
+          `[fetchMessages] Oldest message timestamp updated to: ${newOldestTimestamp}`
+        );
+      } else {
+        setOldestMessageTimestamp(null);
+        console.log(
+          "[fetchMessages] No messages fetched, oldestMessageTimestamp set to null."
+        );
       }
 
       // Add new messages to the beginning of the messages array, ensuring chronological order
-      const newMessages = (fetchedMessages || []).reverse();
-      console.log("New messages to be added (reversed):");
+      const newMessages = (fetchedMessages || []).reverse(); // Keep newMessages for clarity if needed later
+      console.log("New messages to be added (reversed):", newMessages); // Log newMessages
       setMessages((prevMessages) => [...newMessages, ...prevMessages]);
+      setShouldScrollToBottom(false); // Don't scroll to bottom when loading old messages
     } catch (error) {
       console.error("Error fetching messages:", error);
+      setHasMoreMessages(false); // Set to false on error to prevent infinite loading attempts
+      setOldestMessageTimestamp(null); // Clear timestamp on error
     }
-  };
+  }, [setMessages, setHasMoreMessages, setOldestMessageTimestamp]); // Removed messages.length from dependencies
 
   // Pemuatan pesan awal saat komponen dimuat
   useEffect(() => {
+    console.log("[App.tsx useEffect] authStatus:", authStatus);
     if (authStatus === "authenticated") {
-      // Muat pesan dari 1 jam terakhir
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-      fetchMessages(oneHourAgo);
+      // Muat pesan terbaru saat aplikasi dimuat
+      console.log("[App.tsx useEffect] Calling fetchMessages for initial load.");
+      fetchMessages();
     }
-  }, [authStatus]);
+  }, [authStatus, fetchMessages]);
 
   // Fungsi untuk memuat pesan lebih lama (saat scroll ke atas)
   const loadMoreMessages = () => {
@@ -142,8 +169,6 @@ function App() {
     }
   };
 
-  
-
   // Fungsi untuk mengirim pesan user ke backend dan menerima balasan AI
   const sendMessage = async () => {
     if (inputMessage.trim() === "" || isLoading) return;
@@ -153,6 +178,7 @@ function App() {
     setMessages((prev) => [...prev, userMessage]);
     setInputMessage("");
     setIsLoading(true);
+    setShouldScrollToBottom(true); // Scroll to bottom when sending new message
 
     try {
       const token = localStorage.getItem("authToken");
@@ -181,7 +207,14 @@ function App() {
       } else if (error instanceof Error) {
         errorMessage = `Error: ${error.message}`;
       }
-      setMessages((prev) => [...prev, { text: errorMessage, sender: "ai", created_at: new Date().toISOString() }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          text: errorMessage,
+          sender: "ai",
+          created_at: new Date().toISOString(),
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }
@@ -196,7 +229,10 @@ function App() {
   }
 
   if (authStatus === "unauthenticated") {
-    return <AuthModal onAuthSuccess={() => setAuthStatus("authenticated")} />;
+    return <AuthModal onAuthSuccess={() => {
+      setAuthStatus("authenticated");
+      console.log("[App.tsx AuthModal] onAuthSuccess called. Auth status set to authenticated.");
+    }} />;
   }
 
   // Render tampilan utama aplikasi chat
@@ -218,7 +254,13 @@ function App() {
       {/* Konten utama aplikasi */}
       <div className="relative z-10 flex flex-col h-full">
         <ChatHeader onHeaderClick={() => setIsPopupOpen(true)} />
-        <ChatMessages messages={messages} isLoading={isLoading} loadMoreMessages={loadMoreMessages} hasMoreMessages={hasMoreMessages} />
+        <ChatMessages
+          messages={messages}
+          isLoading={isLoading}
+          loadMoreMessages={loadMoreMessages}
+          hasMoreMessages={hasMoreMessages}
+          shouldScrollToBottom={shouldScrollToBottom}
+        />
         <ChatInput
           inputMessage={inputMessage}
           setInputMessage={setInputMessage}
