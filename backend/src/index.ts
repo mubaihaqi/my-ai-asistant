@@ -1,6 +1,7 @@
 import { PORT, systemInstructionContent } from "./config";
 import { handleAuth, handleVerifyToken, verifyToken } from "./auth";
 import { handleChat } from "./gemini";
+import { getMessagesForFrontend } from "./database";
 
 // Logging informasi saat server dijalankan
 console.log(`[${new Date().toISOString()}] Starting Bun backend server...`);
@@ -47,6 +48,27 @@ Bun.serve({
         return authResult.response;
       }
       return handleChat(request, corsHeaders);
+    }
+
+    // Endpoint baru untuk mengambil riwayat chat
+    if (url.pathname === "/api/chat-history" && request.method === "GET") {
+      const authResult = verifyToken(request);
+      if (!authResult.authorized) {
+        return authResult.response;
+      }
+      const urlParams = new URLSearchParams(url.search);
+      const limit = parseInt(urlParams.get("limit") || "20");
+      const beforeTimestamp = urlParams.get("before");
+
+      const messages = await getMessagesForFrontend(
+        "single-user-session",
+        limit,
+        beforeTimestamp
+      );
+      return new Response(JSON.stringify(messages), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Response default jika endpoint tidak ditemukan

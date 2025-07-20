@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI, ChatSession, GenerativeModel } from "@google/generative-ai";
 import { API_KEY, systemInstructionContent, initialSeedHistory } from "../config";
-import { getChatHistoryFromDB, pool, isDatabaseConnected } from "../database";
+import { getChatHistoryFromDB, pool, isDatabaseConnected, saveMessageToDB } from "../database";
 
 // Inisialisasi objek GoogleGenerativeAI
 const genAI = new GoogleGenerativeAI(API_KEY as string);
@@ -127,23 +127,7 @@ export async function handleChat(request: Request, corsHeaders: any) {
     // --- AKHIR LOGIKA UNTUK TEKS ---
 
     // --- NEW: Simpan Pesan AI ke Database ---
-    if (isDatabaseConnected) {
-      try {
-        await pool.query(
-          `INSERT INTO messages (session_id, sender, text, image_url) VALUES ($1, $2, $3, $4)`,
-          ["single-user-session", "ai", aiResponseText, null] // image_url null
-        );
-        console.log(
-          `[${new Date().toISOString()}] AI response saved to Supabase.`
-        );
-      } catch (dbError) {
-        console.error(
-          `[${new Date().toISOString()}] Error saving AI message to DB:`,
-          dbError
-        );
-        // Lanjutkan eksekusi meskipun gagal simpan ke DB
-      }
-    }
+    await saveMessageToDB("single-user-session", "ai", aiResponseText);
     // --- Akhir NEW ---
 
     // Logging balasan dari AI

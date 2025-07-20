@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import AuthModal from "./components/AuthModal";
 import PersonalInfoPopup from "./components/PersonalInfoPopup";
@@ -9,15 +9,21 @@ import ChatInput from "./components/ChatInput";
 // Tipe pengirim pesan, bisa user atau AI
 type Sender = "user" | "ai";
 
+interface Message {
+  text: string;
+  sender: Sender;
+  created_at?: string; // Tambahkan created_at
+}
+
 // Komponen utama aplikasi chat
 function App() {
   const [authStatus, setAuthStatus] = useState<
     "pending" | "authenticated" | "unauthenticated"
   >("pending");
   // State untuk menyimpan daftar pesan chat
-  const [messages, setMessages] = useState<{ text: string; sender: Sender }[]>(
-    []
-  );
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [hasMoreMessages, setHasMoreMessages] = useState<boolean>(true);
+  const [oldestMessageTimestamp, setOldestMessageTimestamp] = useState<string | null>(null);
   // State untuk input pesan user
   const [inputMessage, setInputMessage] = useState<string>("");
   // State untuk status loading saat menunggu balasan AI
@@ -72,6 +78,70 @@ function App() {
     };
   }, []);
 
+  // Fungsi untuk memuat pesan dari backend
+  const fetchMessages = async (beforeTimestamp: string | null = null) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) {
+        console.warn("No auth token found. Cannot fetch messages.");
+        return;
+      }
+
+      let url = `http://localhost:3000/api/chat-history?limit=20`;
+      if (beforeTimestamp) {
+        url += `&before=${beforeTimestamp}`;
+      }
+
+      const response = await axios.get(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const fetchedMessages: Message[] = response.data
+        .filter((msg: Message) => msg !== null && msg !== undefined)
+        .map((msg: Message) => ({
+        text: msg.text,
+        sender: msg.sender,
+        created_at: msg.created_at,
+      }));
+
+      if (fetchedMessages.length < 20) {
+        setHasMoreMessages(false);
+      }
+
+      if (fetchedMessages.length > 0) {
+        // Update oldestMessageTimestamp with the created_at of the oldest fetched message
+        setOldestMessageTimestamp(fetchedMessages[fetchedMessages.length - 1].created_at || null);
+      }
+
+      // Add new messages to the beginning of the messages array, ensuring chronological order
+      const newMessages = (fetchedMessages || []).reverse();
+      console.log("New messages to be added (reversed):");
+      setMessages((prevMessages) => [...newMessages, ...prevMessages]);
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+    }
+  };
+
+  // Pemuatan pesan awal saat komponen dimuat
+  useEffect(() => {
+    if (authStatus === "authenticated") {
+      // Muat pesan dari 1 jam terakhir
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      fetchMessages(oneHourAgo);
+    }
+  }, [authStatus]);
+
+  // Fungsi untuk memuat pesan lebih lama (saat scroll ke atas)
+  const loadMoreMessages = () => {
+    console.log("loadMoreMessages called.");
+    if (hasMoreMessages && oldestMessageTimestamp) {
+      console.log("Fetching more messages before:", oldestMessageTimestamp);
+      fetchMessages(oldestMessageTimestamp);
+    }
+  };
+
   
 
   // Fungsi untuk mengirim pesan user ke backend dan menerima balasan AI
@@ -111,7 +181,7 @@ function App() {
       } else if (error instanceof Error) {
         errorMessage = `Error: ${error.message}`;
       }
-      setMessages((prev) => [...prev, { text: errorMessage, sender: "ai" }]);
+      setMessages((prev) => [...prev, { text: errorMessage, sender: "ai", created_at: new Date().toISOString() }]);
     } finally {
       setIsLoading(false);
     }
@@ -148,7 +218,7 @@ function App() {
       {/* Konten utama aplikasi */}
       <div className="relative z-10 flex flex-col h-full">
         <ChatHeader onHeaderClick={() => setIsPopupOpen(true)} />
-        <ChatMessages messages={messages} isLoading={isLoading} />
+        <ChatMessages messages={messages} isLoading={isLoading} loadMoreMessages={loadMoreMessages} hasMoreMessages={hasMoreMessages} />
         <ChatInput
           inputMessage={inputMessage}
           setInputMessage={setInputMessage}

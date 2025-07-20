@@ -45,27 +45,118 @@ pool
   });
 
 // Fungsi untuk mengambil riwayat chat dari database
+export async function saveMessageToDB(
+  sessionId: string,
+  sender: "user" | "ai",
+  text: string,
+  imageUrl: string | null = null
+): Promise<void> {
+  if (!isDatabaseConnected) {
+    console.warn(
+      `[${new Date().toISOString()}] Database not connected. Skipping message save.`
+    );
+    return;
+  }
+  try {
+    await pool.query(
+      `INSERT INTO messages (session_id, sender, text, image_url) VALUES ($1, $2, $3, $4)`,
+      [sessionId, sender, text, imageUrl]
+    );
+    console.log(
+      `[${new Date().toISOString()}] Message from ${sender} saved to Supabase.`
+    );
+  } catch (dbError) {
+    console.error(
+      `[${new Date().toISOString()}] Error saving message to DB:`,
+      dbError
+    );
+  }
+}
+
 export async function getChatHistoryFromDB(
   sessionId: string,
-  limit: number = 10
+  limit: number = 20, // Default limit for fetching messages
+  beforeTimestamp: string | null = null // ISO string for timestamp
 ): Promise<any[]> {
-  try {
-    // Ambil 10 pesan terakhir untuk sesi ini, diurutkan dari yang paling lama
-    const res = await pool.query(
-      `SELECT sender, text FROM messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT $2`,
-      [sessionId, limit]
+  if (!isDatabaseConnected) {
+    console.warn(
+      `[${new Date().toISOString()}] Database not connected. Returning empty chat history.`
     );
+    return [];
+  }
+
+  try {
+    let query = `SELECT sender, text, created_at FROM messages WHERE session_id = $1`;
+    const params: (string | number)[] = [sessionId];
+
+    if (beforeTimestamp) {
+      query += ` AND created_at < $2::timestamp`;
+      params.push(beforeTimestamp);
+      query += ` ORDER BY created_at DESC LIMIT $3`;
+      params.push(limit);
+    } else {
+      query += ` ORDER BY created_at DESC LIMIT $2`;
+      params.push(limit);
+    }
+
+    const res = await pool.query(query, params);
 
     // Format data agar sesuai dengan format history yang diharapkan oleh Gemini API
-    return res.rows.map((row) => ({
-      role: row.sender === "user" ? "user" : "model", // 'user' atau 'model'
-      parts: [{ text: row.text }],
-    }));
+    // Urutkan kembali dari yang paling lama ke yang terbaru untuk Gemini API
+    return res.rows
+      .reverse()
+      .map((row) => ({
+        role: row.sender === "user" ? "user" : "model", // 'user' atau 'model'
+        parts: [{ text: row.text }],
+      }));
   } catch (error) {
     console.error(
       `[${new Date().toISOString()}] Error fetching chat history from DB:`,
       error
     );
     return []; // Kembalikan array kosong jika ada error
+  }
+}
+
+export async function getMessagesForFrontend(
+  sessionId: string,
+  limit: number = 20,
+  beforeTimestamp: string | null = null
+): Promise<any[]> {
+  if (!isDatabaseConnected) {
+    console.warn(
+      `[${new Date().toISOString()}] Database not connected. Returning empty messages.`
+    );
+    return [];
+  }
+
+  try {
+    let query = `SELECT sender, text, created_at FROM messages WHERE session_id = $1`;
+    const params: (string | number)[] = [sessionId];
+
+    if (beforeTimestamp) {
+      query += ` AND created_at < $2::timestamp`;
+      params.push(beforeTimestamp);
+      query += ` ORDER BY created_at DESC LIMIT $3`;
+      params.push(limit);
+    } else {
+      query += ` ORDER BY created_at DESC LIMIT $2`;
+      params.push(limit);
+    }
+
+    const res = await pool.query(query, params);
+
+    // Return messages in descending order (newest first) for frontend display
+    return res.rows.map((row) => ({
+      text: row.text,
+      sender: row.sender,
+      created_at: row.created_at,
+    }));
+  } catch (error) {
+    console.error(
+      `[${new Date().toISOString()}] Error fetching messages for frontend:`,
+      error
+    );
+    return [];
   }
 }
