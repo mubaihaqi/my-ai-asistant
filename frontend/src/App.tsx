@@ -11,19 +11,26 @@ const AuthModal = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const secretName = import.meta.env.VITE_SECRET_NAME;
-
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim().toLowerCase() === secretName.toLowerCase()) {
-      setError("");
-      onAuthSuccess();
-    } else {
-      setError("Nama tidak valid. Coba lagi.");
+    setError("");
+    try {
+      const response = await axios.post("http://localhost:3000/api/auth", {
+        name: name.trim(),
+      });
+      if (response.data.success && response.data.token) {
+        localStorage.setItem("authToken", response.data.token);
+        onAuthSuccess();
+      } else {
+        setError("Nama tidak valid. Coba lagi.");
+        setName("");
+      }
+    } catch (err) {
+      setError("Gagal menghubungi server. Coba lagi nanti.");
       setName("");
     }
   };
@@ -190,7 +197,9 @@ const PersonalInfoPopup = ({
 
 // Komponen utama aplikasi chat
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authStatus, setAuthStatus] = useState<
+    "pending" | "authenticated" | "unauthenticated"
+  >("pending");
   // State untuk menyimpan daftar pesan chat
   const [messages, setMessages] = useState<{ text: string; sender: Sender }[]>(
     []
@@ -207,9 +216,53 @@ function App() {
   // Nama user yang diizinkan untuk chat dengan AI
   const USER_NAME = "Muhammad Umar Baihaqi";
 
+  useEffect(() => {
+    const verifyToken = async () => {
+      const token = localStorage.getItem("authToken");
+      console.log("Verifying token... Token found:", !!token);
+      if (token) {
+        try {
+          const response = await axios.post(
+            "http://localhost:3000/api/verify-token",
+            { token }
+          );
+          if (response.data.valid) {
+            setAuthStatus("authenticated");
+            console.log("Token valid. Auth status: authenticated");
+          } else {
+            setAuthStatus("unauthenticated");
+            localStorage.removeItem("authToken");
+            console.log("Token invalid. Auth status: unauthenticated");
+          }
+        } catch (error) {
+          console.error("Token verification failed", error);
+          setAuthStatus("unauthenticated");
+          localStorage.removeItem("authToken");
+          console.log(
+            "Token verification failed. Auth status: unauthenticated"
+          );
+        }
+      } else {
+        setAuthStatus("unauthenticated");
+        console.log("No token found. Auth status: unauthenticated");
+      }
+    };
+
+    // Initial verification
+    verifyToken();
+
+    // Set up interval for periodic verification
+    const intervalId = setInterval(verifyToken, 10800000); // Check every 3 hours
+
+    // Cleanup function
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, []);
+
   // Effect untuk menampilkan pesan awal dari AI dengan animasi typing
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (authStatus !== "authenticated") return;
     const initialMessage = "halo beb baru online nih";
     let currentText = "";
     let index = 0;
@@ -233,7 +286,7 @@ function App() {
 
     // Membersihkan interval saat komponen di-unmount
     return () => clearInterval(typingInterval);
-  }, [isAuthenticated]);
+  }, [authStatus]);
 
   // Effect untuk autofocus pada input pesan saat komponen dimuat dan setelah pesan dikirim
   useEffect(() => {
@@ -258,10 +311,19 @@ function App() {
     setIsLoading(true);
 
     try {
-      const response = await axios.post("http://localhost:3000/api/chat", {
-        message: inputMessage,
-        userName: USER_NAME,
-      });
+      const token = localStorage.getItem("authToken");
+      const response = await axios.post(
+        "http://localhost:3000/api/chat",
+        {
+          message: inputMessage,
+          userName: USER_NAME,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
       const aiReply = response.data.reply;
       setMessages((prev) => [...prev, { text: aiReply, sender: "ai" }]);
     } catch (error) {
@@ -295,8 +357,16 @@ function App() {
     }
   }, [inputMessage]);
 
-  if (!isAuthenticated) {
-    return <AuthModal onAuthSuccess={() => setIsAuthenticated(true)} />;
+  if (authStatus === "pending") {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
+        Loading...
+      </div>
+    );
+  }
+
+  if (authStatus === "unauthenticated") {
+    return <AuthModal onAuthSuccess={() => setAuthStatus("authenticated")} />;
   }
 
   // Render tampilan utama aplikasi chat

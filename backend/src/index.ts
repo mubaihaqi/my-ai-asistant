@@ -7,9 +7,12 @@ import {
 import { readFileSync } from "fs";
 import path from "path";
 import { Pool, type PoolClient } from "pg"; // Import Pool dari 'pg'
+import jwt from "jsonwebtoken";
 
 // Ambil API Key Gemini dari environment variable
 const API_KEY = process.env.GEMINI_API_KEY;
+const SECRET_NAME = process.env.SECRET_NAME;
+const JWT_SECRET = process.env.JWT_SECRET || "your-default-secret";
 
 // --- KONFIGURASI PATH FILE ---
 const systemPath =
@@ -154,28 +157,94 @@ console.log(
   }..."`
 );
 
+// Get port from environment variable or use default
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+
 // Inisialisasi dan konfigurasi server Bun
 Bun.serve({
-  port: 3000,
+  port: PORT,
   async fetch(request: Request) {
-    const url = new URL(request.url);
+    const url = new URL(request.url); // Define url here
 
-    // Handle preflight CORS request untuk endpoint /api/chat
-    if (request.method === "OPTIONS" && url.pathname === "/api/chat") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-          "Access-Control-Allow-Headers":
-            "Content-Type, Authorization, X-Requested-With",
-          "Access-Control-Max-Age": "86400",
-        },
-      });
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    };
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: corsHeaders });
     }
 
-    // Endpoint utama untuk menerima dan memproses chat dari frontend
+    // Endpoint untuk autentikasi
+    if (url.pathname === "/api/auth" && request.method === "POST") {
+      try {
+        const { name } = (await request.json()) as { name: string };
+
+        if (
+          name &&
+          name.trim().toLowerCase() === (SECRET_NAME || "").toLowerCase()
+        ) {
+          const token = jwt.sign({ name }, JWT_SECRET, { expiresIn: "1h" });
+          return new Response(JSON.stringify({ success: true, token }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        } else {
+          return new Response(JSON.stringify({ success: false }), {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      } catch (error) {
+        return new Response(JSON.stringify({ error: "Invalid request" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Endpoint untuk verifikasi token
+    if (url.pathname === "/api/verify-token" && request.method === "POST") {
+      try {
+        const { token } = (await request.json()) as { token: string };
+        if (!token) {
+          return new Response(JSON.stringify({ valid: false }), {
+            status: 400,
+          });
+        }
+
+        jwt.verify(token, JWT_SECRET);
+        return new Response(JSON.stringify({ valid: true }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error("JWT verification failed:", error);
+        return new Response(JSON.stringify({ valid: false }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
     if (url.pathname === "/api/chat" && request.method === "POST") {
+      const token = request.headers.get("Authorization")?.split(" ")[1];
+      if (!token) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Access-Control-Allow-Origin": "*" },
+        });
+      }
+
+      try {
+        jwt.verify(token, JWT_SECRET);
+      } catch (error) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Access-Control-Allow-Origin": "*" },
+        });
+      }
+
       try {
         // Ambil pesan dan userName dari request body (tanpa image)
         const { message, userName } = (await request.json()) as ChatRequest;
@@ -312,13 +381,9 @@ Bun.serve({
             .substring(0, 100)}..."`
         );
 
-        // Kirim balasan AI ke frontend
         return new Response(JSON.stringify({ reply: aiResponseText }), {
           status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } catch (error: any) {
         // Handle error saat proses chat gagal
@@ -347,22 +412,19 @@ Bun.serve({
         // Kirim pesan error ke frontend
         return new Response(JSON.stringify({ error: errorMessage }), {
           status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }
 
     // Response default jika endpoint tidak ditemukan
-    return new Response("Not Found", { status: 404 });
+    return new Response("Not Found", { status: 404, headers: corsHeaders });
   },
 });
 
 // Logging info server berjalan dan konfigurasi CORS
 console.log(
-  `[${new Date().toISOString()}] Bun server listening on http://localhost:3000`
+  `[${new Date().toISOString()}] Bun server listening on http://localhost:${PORT}`
 );
 console.log(
   `[${new Date().toISOString()}] CORS allows requests from any origin for development purposes. This should be restricted in production.`
