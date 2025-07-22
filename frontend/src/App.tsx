@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import AuthModal from "./components/AuthModal";
 import PersonalInfoPopup from "./components/PersonalInfoPopup";
@@ -34,9 +34,118 @@ function App() {
   const [shouldScrollToBottom, setShouldScrollToBottom] = useState<boolean>(true); // New state for scroll control
   // State untuk popup personalia
   const [isPopupOpen, setIsPopupOpen] = useState<boolean>(false);
+  const [websocket, setWebsocket] = useState<WebSocket | null>(null);
+  const idleTimerRef = useRef<number | null>(null);
+  const IDLE_TIMEOUT = 30 * 60 * 1000; // 30 menit dalam milidetik
+  const [idleCount, setIdleCount] = useState(0); // New state for idle count
 
   // Nama user yang diizinkan untuk chat dengan AI
   const USER_NAME = "Muhammad Umar Baihaqi";
+
+  // Fungsi untuk mereset timer idle
+  const resetIdleTimer = useCallback(() => {
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current);
+    }
+    idleTimerRef.current = window.setTimeout(async () => {
+      console.log("Idle detected! Triggering proactive message.");
+      const token = localStorage.getItem("authToken");
+      const newIdleCount = idleCount + 1; // Increment idle count
+      setIdleCount(newIdleCount); // Update state
+
+      if (token) {
+        try {
+          await axios.post("http://localhost:3000/api/trigger-proactive", {
+            idleCount: newIdleCount, // Send idle count to backend
+          },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+        } catch (error) {
+          console.error("Error triggering proactive message:", error);
+        }
+      }
+    }, IDLE_TIMEOUT);
+  }, [IDLE_TIMEOUT, idleCount]); // Add idleCount to dependencies
+
+  // Efek untuk menginisialisasi WebSocket dan mendengarkan aktivitas pengguna
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: number | null = null;
+
+    const connectWebSocket = () => {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        return; // Already connected or connecting
+      }
+      ws = new WebSocket("ws://localhost:3000/api/connect-websocket");
+
+      ws.onopen = () => {
+        console.log("WebSocket connected!");
+        setWebsocket(ws);
+        resetIdleTimer(); // Reset timer saat koneksi terbuka
+        setIdleCount(0); // Reset idle count on new connection
+        if (reconnectTimeout) {
+          clearTimeout(reconnectTimeout);
+          reconnectTimeout = null;
+        }
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === "proactive_message") {
+          setMessages((prev) => [...prev, { text: data.message, sender: "ai" }]);
+          setShouldScrollToBottom(true);
+          resetIdleTimer(); // Reset timer setelah menerima pesan proaktif
+          setIdleCount(0); // Reset idle count after receiving proactive message
+        }
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket disconnected. Attempting to reconnect...");
+        setWebsocket(null);
+        if (idleTimerRef.current) {
+          clearTimeout(idleTimerRef.current);
+        }
+        // Try to reconnect after a delay
+        reconnectTimeout = window.setTimeout(connectWebSocket, 3000); // Reconnect after 3 seconds
+      };
+
+      ws.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        ws?.close(); // Close to trigger onclose and reconnect logic
+      };
+    };
+
+    connectWebSocket(); // Initial connection
+
+    // Mendengarkan aktivitas pengguna
+    const handleActivity = () => {
+      resetIdleTimer();
+      setIdleCount(0); // Reset idle count on user activity
+    };
+
+    window.addEventListener("mousemove", handleActivity);
+    window.addEventListener("keydown", handleActivity);
+    window.addEventListener("scroll", handleActivity);
+
+    return () => {
+      if (ws) {
+        ws.close();
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      window.removeEventListener("mousemove", handleActivity);
+      window.removeEventListener("keydown", handleActivity);
+      window.removeEventListener("scroll", handleActivity);
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+      }
+    };
+  }, [resetIdleTimer, setMessages, setWebsocket]);
 
   useEffect(() => {
     const verifyToken = async () => {
@@ -143,12 +252,13 @@ function App() {
       console.log("New messages to be added (reversed):", newMessages); // Log newMessages
       setMessages((prevMessages) => [...newMessages, ...prevMessages]);
       setShouldScrollToBottom(false); // Don't scroll to bottom when loading old messages
+      resetIdleTimer(); // Reset idle timer after fetching messages
     } catch (error) {
       console.error("Error fetching messages:", error);
       setHasMoreMessages(false); // Set to false on error to prevent infinite loading attempts
       setOldestMessageTimestamp(null); // Clear timestamp on error
     }
-  }, [setMessages, setHasMoreMessages, setOldestMessageTimestamp]); // Removed messages.length from dependencies
+  }, [setMessages, setHasMoreMessages, setOldestMessageTimestamp, resetIdleTimer]);
 
   // Pemuatan pesan awal saat komponen dimuat
   useEffect(() => {
@@ -196,6 +306,7 @@ function App() {
       );
       const aiReply = response.data.reply;
       setMessages((prev) => [...prev, { text: aiReply, sender: "ai" }]);
+      resetIdleTimer(); // Reset idle timer after AI replies
     } catch (error) {
       console.error("Error sending message:", error);
       let errorMessage = "Sorry, something went wrong while contacting the AI.";

@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI, ChatSession, GenerativeModel } from "@google/generative-ai";
 import { API_KEY, systemInstructionContent, initialSeedHistory } from "../config";
 import { getChatHistoryFromDB, pool, isDatabaseConnected, saveMessageToDB } from "../database";
+import { sendWebSocketMessage } from "../index"; // Import sendWebSocketMessage
 
 // Inisialisasi objek GoogleGenerativeAI
 const genAI = new GoogleGenerativeAI(API_KEY as string);
@@ -170,5 +171,57 @@ export async function handleChat(request: Request, corsHeaders: any) {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+}
+
+export async function handleProactiveMessage(sessionId: string, idleCount: number) {
+  try {
+    console.log(`[${new Date().toISOString()}] Generating proactive message for session: ${sessionId}, idleCount: ${idleCount}`);
+
+    // Ambil riwayat chat terbaru dari database
+    const existingHistory = await getChatHistoryFromDB(sessionId);
+    console.log(`[${new Date().toISOString()}] Loaded ${existingHistory.length} messages from DB for proactive message.`);
+
+    // Buat sesi chat baru untuk pesan proaktif
+    const proactiveChatSession = model.startChat({
+      history: [...initialSeedHistory, ...existingHistory],
+      generationConfig: {
+        maxOutputTokens: 50, // Pesan proaktif cenderung lebih pendek
+        temperature: 1.0, // Lebih kreatif untuk pesan proaktif
+        topP: 0.9,
+        topK: 40,
+      },
+      safetySettings: [],
+      systemInstruction: {
+        role: "model",
+        parts: [{ text: systemInstructionContent }],
+      },
+    });
+
+    let prompt: string;
+    if (idleCount === 1) {
+      prompt = "Pengguna sudah lama tidak merespons. Berikan pesan proaktif yang singkat dan menarik untuk memulai percakapan lagi, berdasarkan riwayat chat jika memungkinkan. Jangan terlalu formal atau panjang. Contoh: 'Ren, kok diem aja? Kezi kangen nih.'";
+    } else if (idleCount === 2) {
+      prompt = "Pengguna semakin lama tidak merespons. Berikan pesan proaktif yang menunjukkan sedikit kekhawatiran dan ajakan untuk berinteraksi. Contoh: 'Ren, kamu baik-baik aja kan? Kezi khawatir nih.'";
+    } else {
+      prompt = "Pengguna sudah sangat lama tidak merespons. Berikan pesan proaktif yang menunjukkan kekhawatiran yang lebih jelas dan mendesak, atau ajakan untuk membalas. Contoh: 'Ren, kamu di mana? Kezi khawatir banget nih, bales dong.'";
+    }
+
+    const result = await proactiveChatSession.sendMessage(prompt);
+    const response = await result.response;
+    const proactiveReply = response.text();
+
+    // Simpan pesan proaktif ke database
+    await saveMessageToDB(sessionId, "ai", proactiveReply);
+
+    // Kirim pesan proaktif ke frontend melalui WebSocket
+    sendWebSocketMessage(sessionId, { type: "proactive_message", message: proactiveReply });
+
+    console.log(`[${new Date().toISOString()}] Proactive message sent: "${proactiveReply.trim().substring(0, 100)}..."`);
+
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error generating proactive message:`, error);
+    // Jika gagal, kirim pesan default ke frontend
+    sendWebSocketMessage(sessionId, { type: "proactive_message", message: "Kamu masih di sana? Aku kangen ngobrol nih." });
   }
 }
