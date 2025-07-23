@@ -49,7 +49,8 @@ export async function saveMessageToDB(
   sessionId: string,
   sender: "user" | "ai",
   text: string,
-  imageUrl: string | null = null
+  imageUrl: string | null = null,
+  imageMimeType: string | null = null
 ): Promise<void> {
   if (!isDatabaseConnected) {
     console.warn(
@@ -59,10 +60,10 @@ export async function saveMessageToDB(
   }
   try {
     const createdAt = new Date().toISOString();
-    const params = [sessionId, sender, text, imageUrl, createdAt];
+    const params = [sessionId, sender, text, imageUrl, imageMimeType, createdAt];
     console.log(`[saveMessageToDB] Attempting to save with params: ${JSON.stringify(params)}`);
     await pool.query(
-      `INSERT INTO messages (session_id, sender, text, image_url, created_at) VALUES ($1, $2, $3, $4, $5)`,
+      `INSERT INTO messages (session_id, sender, text, image_url, image_mime_type, created_at) VALUES ($1, $2, $3, $4, $5, $6)`,
       params
     );
     console.log(
@@ -89,7 +90,7 @@ export async function getChatHistoryFromDB(
   }
 
   try {
-    let query = `SELECT sender, text, created_at FROM messages WHERE session_id = $1`;
+    let query = `SELECT sender, text, image_url, image_mime_type, created_at FROM messages WHERE session_id = $1`;
     const params: (string | number)[] = [sessionId];
 
     if (beforeTimestamp) {
@@ -110,7 +111,10 @@ export async function getChatHistoryFromDB(
       .reverse()
       .map((row) => ({
         role: row.sender === "user" ? "user" : "model", // 'user' atau 'model'
-        parts: [{ text: row.text }],
+        parts: [
+          { text: row.text },
+          ...(row.image_url && row.image_mime_type ? [{ inlineData: { mimeType: row.image_mime_type, data: row.image_url } }] : []),
+        ],
       }));
   } catch (error) {
     console.error(
@@ -134,7 +138,7 @@ export async function getMessagesForFrontend(
   }
 
   try {
-    let query = `SELECT sender, text, created_at FROM messages WHERE session_id = $1`;
+    let query = `SELECT sender, text, image_url, image_mime_type, created_at FROM messages WHERE session_id = $1`;
     const params: (string | number)[] = [sessionId];
 
     if (beforeTimestamp) {
@@ -155,6 +159,7 @@ export async function getMessagesForFrontend(
       text: row.text,
       sender: row.sender,
       created_at: row.created_at,
+      imageUrl: row.image_url && row.image_mime_type ? `data:${row.image_mime_type};base64,${row.image_url}` : undefined, // Tambahkan imageUrl
     }));
   } catch (error) {
     console.error(

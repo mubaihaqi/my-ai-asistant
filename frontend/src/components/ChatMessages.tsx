@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useLayoutEffect, useState } from "react";
+import { ArrowDown } from "lucide-react";
 
 type Sender = "user" | "ai";
 
@@ -26,6 +27,7 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   const [showLoadMoreButton, setShowLoadMoreButton] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   useLayoutEffect(() => {
     if (shouldScrollToBottom && chatEndRef.current) {
@@ -38,14 +40,23 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
     if (!container) return;
 
     const handleScroll = () => {
+      // Show load more button logic
       if (container.scrollTop <= 5 && hasMoreMessages && !isLoading) {
         setShowLoadMoreButton(true);
       } else {
         setShowLoadMoreButton(false);
       }
+      // Show scroll-to-bottom button if not at the bottom
+      const isAtBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight <
+        40;
+      setShowScrollToBottom(!isAtBottom);
     };
 
     container.addEventListener("scroll", handleScroll);
+
+    // Initial check
+    handleScroll();
 
     return () => {
       container.removeEventListener("scroll", handleScroll);
@@ -55,13 +66,26 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
   return (
     <main
       ref={chatContainerRef}
-      className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6"
+      className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 relative"
     >
+      {/* Scroll to bottom button */}
+      {showScrollToBottom && (
+        <button
+          onClick={() => {
+            chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          }}
+          className="fixed bottom-16 right-4 z-20 bg-gradient-to-br from-indigo-700 to-purple-800 text-white rounded-full p-2 transition-colors duration-300 ease-in-out shadow-lg flex items-center justify-center hover:from-indigo-800 active:scale-95 animate-bounce"
+          aria-label="Scroll to bottom"
+          style={{ boxShadow: "0 2px 8px rgba(0,0,0,0.15)" }}
+        >
+          <ArrowDown size={28} />
+        </button>
+      )}
       {showLoadMoreButton && hasMoreMessages && !isLoading && (
         <div className="text-center mb-4">
           <button
             onClick={loadMoreMessages}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
+            className="px-4 py-2 bg-gradient-to-br from-indigo-700 to-purple-800 text-white transition-colors duration-300 hover:shadow-xl hover:from-indigo-800 active:scale-95 animate-bounce rounded-2xl"
           >
             Load More Messages
           </button>

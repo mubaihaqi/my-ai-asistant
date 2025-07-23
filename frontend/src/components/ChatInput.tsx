@@ -6,8 +6,8 @@ interface ChatInputProps {
   setInputMessage: (message: string) => void;
   sendMessage: () => void;
   isLoading: boolean;
-  image: { base64: string | null; file: File | null };
-  setImage: (image: { base64: string | null; file: File | null }) => void;
+  image: { base64: string | null; file: File | null; mimeType: string | null };
+  setImage: (image: { base64: string | null; file: File | null; mimeType: string | null }) => void;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -26,9 +26,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        // Hanya ambil bagian base64 dari data URL
-        const base64String = (reader.result as string).split(",")[1];
-        setImage({ base64: base64String, file });
+        const fullDataUrl = reader.result as string;
+        const [prefix, base64String] = fullDataUrl.split(",");
+        const mimeType = prefix.split(":")[1].split(";")[0];
+        setImage({ base64: base64String, file, mimeType });
       };
       reader.readAsDataURL(file);
     }
@@ -39,7 +40,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   const handleRemoveImage = () => {
-    setImage({ base64: null, file: null });
+    setImage({ base64: null, file: null, mimeType: null });
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -65,7 +66,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           {image.base64 && (
             <div className="relative mb-2 w-24 h-24 rounded-md overflow-hidden">
               <img
-                src={`data:image/jpeg;base64,${image.base64}`}
+                src={`data:${image.mimeType || "image/jpeg"};base64,${image.base64}`}
                 alt="Preview"
                 className="w-full h-full object-cover"
               />

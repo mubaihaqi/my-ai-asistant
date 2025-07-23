@@ -37,9 +37,11 @@ function App() {
   const [image, setImage] = useState<{
     base64: string | null;
     file: File | null;
+    mimeType: string | null;
   }>({
     base64: null,
     file: null,
+    mimeType: null,
   });
   // State untuk status loading saat menunggu balasan AI
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -244,6 +246,7 @@ function App() {
             text: msg.text,
             sender: msg.sender,
             created_at: msg.created_at,
+            imageUrl: msg.imageUrl, // Tambahkan imageUrl di sini
           }));
 
         console.log(
@@ -315,15 +318,15 @@ function App() {
     const userMessage: Message = {
       text: inputMessage,
       sender: "user" as Sender,
-      // Tambahkan preview gambar jika ada
-      ...(image.base64 && { imageUrl: image.base64 }),
+      ...(image.base64 && { imageUrl: `data:${image.mimeType || "image/jpeg"};base64,${image.base64}` }),
     };
 
     // Menambahkan pesan user ke state
     setMessages((prev) => [...prev, userMessage]);
     setInputMessage("");
     const imageToSend = image.base64; // Simpan gambar untuk dikirim
-    setImage({ base64: null, file: null }); // Reset state gambar di UI
+    const mimeTypeToSend = image.mimeType; // Simpan mimeType untuk dikirim
+    setImage({ base64: null, file: null, mimeType: null }); // Reset state gambar di UI
     setIsLoading(true);
     setShouldScrollToBottom(true); // Scroll to bottom when sending new message
 
@@ -335,6 +338,7 @@ function App() {
           message: inputMessage,
           userName: USER_NAME,
           image: imageToSend, // Kirim gambar base64
+          mimeType: mimeTypeToSend, // Kirim mimeType
         },
         {
           headers: {

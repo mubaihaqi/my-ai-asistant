@@ -35,12 +35,13 @@ interface ChatRequest {
   message: string;
   userName?: string;
   image?: string; // Base64 encoded image
+  mimeType?: string; // MIME type of the image
 }
 
 export async function handleChat(request: Request, corsHeaders: any) {
   try {
     // Ambil pesan, userName, dan image dari request body
-    const { message, userName, image } = (await request.json()) as ChatRequest;
+    const { message, userName, image, mimeType } = (await request.json()) as ChatRequest;
 
     // Validasi dasar: harus ada pesan atau gambar
     if (!message.trim() && !image) {
@@ -82,7 +83,7 @@ export async function handleChat(request: Request, corsHeaders: any) {
 
     // --- NEW: Simpan Pesan User ke Database ---
     try {
-      await saveMessageToDB("single-user-session", "user", message, null);
+      await saveMessageToDB("single-user-session", "user", message, image, mimeType);
       console.log(
         `[${new Date().toISOString()}] User message saved to Supabase.`
       );
