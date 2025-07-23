@@ -3,7 +3,12 @@ import React, { useRef, useEffect, useLayoutEffect, useState } from "react";
 type Sender = "user" | "ai";
 
 interface ChatMessagesProps {
-  messages: { text: string; sender: Sender; created_at?: string }[];
+  messages: {
+    text: string;
+    sender: Sender;
+    created_at?: string;
+    imageUrl?: string; // Tambahkan imageUrl
+  }[];
   isLoading: boolean;
   loadMoreMessages: () => void;
   hasMoreMessages: boolean;
@@ -40,10 +45,10 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
       }
     };
 
-    container.addEventListener('scroll', handleScroll);
+    container.addEventListener("scroll", handleScroll);
 
     return () => {
-      container.removeEventListener('scroll', handleScroll);
+      container.removeEventListener("scroll", handleScroll);
     };
   }, [hasMoreMessages, isLoading]);
 
@@ -82,13 +87,24 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
           }`}
         >
           <div
-            className={`max-w-xs sm:max-w-md md:max-w-lg p-3 px-4 rounded-2xl shadow-md transition-all duration-300 ${
+            className={`max-w-xs sm:max-w-md md:max-w-lg rounded-2xl shadow-md transition-all duration-300 ${
               msg.sender === "user"
                 ? "bg-indigo-700 text-white rounded-br-lg"
                 : "bg-gray-800 text-gray-200 rounded-bl-lg"
+            } ${
+              !msg.text && msg.imageUrl ? "p-0" : "p-3 px-4" // Hapus padding jika hanya ada gambar
             }`}
           >
-            <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+            {msg.imageUrl && (
+              <img
+                src={msg.imageUrl}
+                alt="User upload"
+                className="rounded-2xl max-w-full h-auto"
+              />
+            )}
+            {msg.text && (
+              <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+            )}
           </div>
         </div>
       ))}

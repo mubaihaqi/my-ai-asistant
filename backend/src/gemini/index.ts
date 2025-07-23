@@ -23,7 +23,9 @@ const genAI = new GoogleGenerativeAI(API_KEY as string);
 // --- MODEL UNTUK TEKS SAJA ---
 // Menggunakan gemini-1.0-pro untuk kompatibilitas penuh dengan systemInstruction dan chat history.
 const MODEL_NAME = "gemini-2.0-flash";
-const model: GenerativeModel = genAI.getGenerativeModel({ model: MODEL_NAME });
+const VISION_MODEL_NAME = "gemini-1.5-flash";
+const textModel: GenerativeModel = genAI.getGenerativeModel({ model: MODEL_NAME });
+const visionModel: GenerativeModel = genAI.getGenerativeModel({ model: VISION_MODEL_NAME });
 
 // Variabel untuk menyimpan sesi chat yang sedang berlangsung
 let chatSession: ChatSession | null = null;
@@ -32,18 +34,19 @@ let chatSession: ChatSession | null = null;
 interface ChatRequest {
   message: string;
   userName?: string;
+  image?: string; // Base64 encoded image
 }
 
 export async function handleChat(request: Request, corsHeaders: any) {
   try {
-    // Ambil pesan dan userName dari request body (tanpa image)
-    const { message, userName } = (await request.json()) as ChatRequest;
+    // Ambil pesan, userName, dan image dari request body
+    const { message, userName, image } = (await request.json()) as ChatRequest;
 
-    // Validasi dasar: harus ada pesan
-    if (!message.trim()) {
-      console.warn(`[${new Date().toISOString()}] Empty message received.`);
+    // Validasi dasar: harus ada pesan atau gambar
+    if (!message.trim() && !image) {
+      console.warn(`[${new Date().toISOString()}] Empty message and no image received.`);
       return new Response(
-        JSON.stringify({ error: "Please provide a text message." }),
+        JSON.stringify({ error: "Please provide a text message or an image." }),
         {
           status: 400,
           headers: {
@@ -93,48 +96,84 @@ export async function handleChat(request: Request, corsHeaders: any) {
 
     let aiResponseText: string;
 
-    // --- LOGIKA UNTUK TEKS ---
-    // Inisialisasi sesi chat jika belum ada
-    if (!chatSession) {
-      // --- NEW: Ambil Riwayat Chat dari Database ---
-      const existingHistory = await getChatHistoryFromDB("single-user-session");
-      console.log(
-        `[${new Date().toISOString()}] Loaded ${
-          existingHistory.length
-        } messages from DB for chat history.`
-      );
-      // --- Akhir NEW ---
-
-      chatSession = model.startChat({
-        history: [...initialSeedHistory, ...existingHistory], // Gabungkan seed history dan history dari DB
-        generationConfig: {
-          maxOutputTokens: 100, // Kembali ke 100 seperti yang disarankan
-          temperature: 0.9,
-          topP: 0.9,
-          topK: 40,
+    // --- LOGIKA UNTUK GAMBAR ATAU GAMBAR + TEKS ---
+    if (image) {
+      console.log(`[${new Date().toISOString()}] Processing request with image...`);
+      
+      // Buat prompt untuk model vision
+      const imagePart = {
+        inlineData: {
+          mimeType: "image/jpeg", // Asumsi jpeg, bisa dibuat lebih dinamis
+          data: image,
         },
-        safetySettings: [],
-        systemInstruction: {
-          role: "model",
-          parts: [{ text: systemInstructionContent }],
-        },
-      });
-      console.log(
-        `[${new Date().toISOString()}] New chat session started with ${MODEL_NAME} for text.`
-      );
-    }
+      };
 
-    console.log(
-      `[${new Date().toISOString()}] Calling ${MODEL_NAME} with text only (via chat session)...`
-    );
-    if (chatSession) {
-      const result = await chatSession.sendMessage(message);
-      const response = await result.response;
-      aiResponseText = response.text();
+      const textPart = {
+        text: message || "Tolong jelaskan gambar ini.", // Fallback jika tidak ada pesan teks
+      };
+
+      try {
+        const result = await visionModel.generateContent({
+          contents: [{ role: "user", parts: [textPart, imagePart] }],
+          systemInstruction: {
+            role: "model",
+            parts: [{ text: systemInstructionContent }],
+          },
+          generationConfig: {
+            maxOutputTokens: 2048, // Beri token lebih banyak untuk deskripsi gambar
+            temperature: 0.9,
+            topP: 0.9,
+            topK: 40,
+          },
+        });
+        const response = await result.response;
+        aiResponseText = response.text();
+        console.log(`[${new Date().toISOString()}] Vision model responded successfully.`);
+      } catch (visionError) {
+        console.error(`[${new Date().toISOString()}] Error calling vision model:`, visionError);
+        throw visionError; // Lemparkan error untuk ditangani oleh block catch utama
+      }
     } else {
-      throw new Error("Chat session was not initialized for text model.");
+      // --- LOGIKA UNTUK TEKS SAJA (menggunakan chat session) ---
+      if (!chatSession) {
+        const existingHistory = await getChatHistoryFromDB("single-user-session");
+        console.log(
+          `[${new Date().toISOString()}] Loaded ${
+            existingHistory.length
+          } messages from DB for chat history.`
+        );
+
+        chatSession = textModel.startChat({
+          history: [...initialSeedHistory, ...existingHistory],
+          generationConfig: {
+            maxOutputTokens: 100,
+            temperature: 0.9,
+            topP: 0.9,
+            topK: 40,
+          },
+          safetySettings: [],
+          systemInstruction: {
+            role: "model",
+            parts: [{ text: systemInstructionContent }],
+          },
+        });
+        console.log(
+          `[${new Date().toISOString()}] New chat session started with ${MODEL_NAME} for text.`
+        );
+      }
+
+      console.log(
+        `[${new Date().toISOString()}] Calling ${MODEL_NAME} with text only (via chat session)...`
+      );
+      if (chatSession) {
+        const result = await chatSession.sendMessage(message);
+        const response = await result.response;
+        aiResponseText = response.text();
+      } else {
+        throw new Error("Chat session was not initialized for text model.");
+      }
     }
-    // --- AKHIR LOGIKA UNTUK TEKS ---
+    // --- AKHIR LOGIKA ---
 
     // --- NEW: Simpan Pesan AI ke Database ---
     await saveMessageToDB("single-user-session", "ai", aiResponseText);
@@ -205,7 +244,7 @@ export async function handleProactiveMessage(
     );
 
     // Buat sesi chat baru untuk pesan proaktif
-    const proactiveChatSession = model.startChat({
+    const proactiveChatSession = textModel.startChat({
       history: [...initialSeedHistory, ...existingHistory],
       generationConfig: {
         maxOutputTokens: 150, // Pesan proaktif cenderung lebih pendek
