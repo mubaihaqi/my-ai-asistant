@@ -2,6 +2,7 @@ import { PORT, systemInstructionContent } from "./config";
 import { handleAuth, handleVerifyToken, verifyToken } from "./auth";
 import { handleChat, handleProactiveMessage } from "./gemini";
 import { getMessagesForFrontend } from "./database";
+import { initializeScheduledJobs } from "./schedule";
 
 // Logging informasi saat server dijalankan
 console.log(`[${new Date().toISOString()}] Starting Bun backend server...`);
@@ -24,29 +25,51 @@ export function sendWebSocketMessage(sessionId: string, message: any) {
   const ws = activeWebSockets.get(sessionId);
   if (ws) {
     ws.send(JSON.stringify(message));
-    console.log(`[${new Date().toISOString()}] Sent WebSocket message to ${sessionId}: ${JSON.stringify(message).substring(0, 100)}...`);
+    console.log(
+      `[${new Date().toISOString()}] Sent WebSocket message to ${sessionId}: ${JSON.stringify(
+        message
+      ).substring(0, 100)}...`
+    );
   } else {
-    console.warn(`[${new Date().toISOString()}] No active WebSocket found for session: ${sessionId}`);
+    console.warn(
+      `[${new Date().toISOString()}] No active WebSocket found for session: ${sessionId}`
+    );
   }
 }
 
 const websocketHandlers: WebSocketHandler<unknown> = {
   open(ws) {
-    console.log(`[${new Date().toISOString()}] WebSocket opened for client: ${ws.remoteAddress}`);
+    console.log(
+      `[${new Date().toISOString()}] WebSocket opened for client: ${
+        ws.remoteAddress
+      }`
+    );
     // Asosiasikan koneksi WebSocket dengan sesi pengguna.
     // Untuk demo ini, kita asumsikan satu sesi pengguna.
     activeWebSockets.set("single-user-session", ws);
   },
   message(ws, message) {
-    console.log(`[${new Date().toISOString()}] Received WebSocket message from client ${ws.remoteAddress}: ${message}`);
+    console.log(
+      `[${new Date().toISOString()}] Received WebSocket message from client ${
+        ws.remoteAddress
+      }: ${message}`
+    );
     // Handle pesan masuk dari WebSocket jika diperlukan
   },
   close(ws, code, message) {
-    console.log(`[${new Date().toISOString()}] WebSocket closed for client ${ws.remoteAddress} with code ${code}: ${message}`);
+    console.log(
+      `[${new Date().toISOString()}] WebSocket closed for client ${
+        ws.remoteAddress
+      } with code ${code}: ${message}`
+    );
     activeWebSockets.delete("single-user-session");
   },
   drain(ws) {
-    console.log(`[${new Date().toISOString()}] WebSocket backpressure relieved for client: ${ws.remoteAddress}`);
+    console.log(
+      `[${new Date().toISOString()}] WebSocket backpressure relieved for client: ${
+        ws.remoteAddress
+      }`
+    );
   },
 };
 
@@ -117,7 +140,10 @@ Bun.serve({
     }
 
     // Endpoint baru untuk memicu pesan proaktif
-    if (url.pathname === "/api/trigger-proactive" && request.method === "POST") {
+    if (
+      url.pathname === "/api/trigger-proactive" &&
+      request.method === "POST"
+    ) {
       const authResult = verifyToken(request);
       if (!authResult.authorized) {
         return authResult.response;
@@ -146,3 +172,6 @@ console.log(
 console.log(
   `[${new Date().toISOString()}] Remember to set GEMINI_API_KEY in your backend/.env file.`
 );
+
+// Inisialisasi cron jobs setelah server siap
+initializeScheduledJobs();

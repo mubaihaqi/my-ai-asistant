@@ -36,3 +36,4 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 #kezia personality
 /src/config/keziInstruction.json
 /src/config/seedHistory.json
+/src/config/prompts.json

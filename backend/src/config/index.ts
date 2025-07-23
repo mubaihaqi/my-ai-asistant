@@ -14,6 +14,9 @@ export const systemPath =
 export const seedHistoryPath =
   process.env.SEED_HISTORY_PATH ||
   path.join(process.cwd(), "src", "config", "seedHistory.json");
+export const promptsPath =
+  process.env.PROMPTS_PATH ||
+  path.join(process.cwd(), "src", "config", "prompts.json");
 
 // Validasi API Key, jika tidak ada maka server tidak dijalankan
 if (!API_KEY) {
@@ -28,15 +31,17 @@ if (!API_KEY) {
 // Variabel untuk menyimpan instruksi sistem dan riwayat seed chat
 export let systemInstructionContent: string;
 export let initialSeedHistory: any[] = [];
+export let promptsConfig: any = {};
 
 // Baca file konfigurasi instruksi sistem dan seed history
 try {
   systemInstructionContent = readFileSync(systemPath, "utf-8");
   initialSeedHistory = JSON.parse(readFileSync(seedHistoryPath, "utf-8"));
+  promptsConfig = JSON.parse(readFileSync(promptsPath, "utf-8"));
 } catch (error) {
   console.error("Error reading configuration files:", error);
   console.error(
-    "Make sure src/config/keziInstruction.json and src/config/seedHistory.json exist and are valid JSON."
+    "Make sure src/config/keziInstruction.json, src/config/seedHistory.json, and src/config/prompts.json exist and are valid JSON."
   );
   process.exit(1);
 }

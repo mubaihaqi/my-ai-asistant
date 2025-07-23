@@ -1,6 +1,20 @@
-import { GoogleGenerativeAI, ChatSession, GenerativeModel } from "@google/generative-ai";
-import { API_KEY, systemInstructionContent, initialSeedHistory } from "../config";
-import { getChatHistoryFromDB, pool, isDatabaseConnected, saveMessageToDB } from "../database";
+import {
+  GoogleGenerativeAI,
+  ChatSession,
+  GenerativeModel,
+} from "@google/generative-ai";
+import {
+  API_KEY,
+  systemInstructionContent,
+  initialSeedHistory,
+  promptsConfig,
+} from "../config";
+import {
+  getChatHistoryFromDB,
+  pool,
+  isDatabaseConnected,
+  saveMessageToDB,
+} from "../database";
 import { sendWebSocketMessage } from "../index"; // Import sendWebSocketMessage
 
 // Inisialisasi objek GoogleGenerativeAI
@@ -83,9 +97,7 @@ export async function handleChat(request: Request, corsHeaders: any) {
     // Inisialisasi sesi chat jika belum ada
     if (!chatSession) {
       // --- NEW: Ambil Riwayat Chat dari Database ---
-      const existingHistory = await getChatHistoryFromDB(
-        "single-user-session"
-      );
+      const existingHistory = await getChatHistoryFromDB("single-user-session");
       console.log(
         `[${new Date().toISOString()}] Loaded ${
           existingHistory.length
@@ -174,19 +186,29 @@ export async function handleChat(request: Request, corsHeaders: any) {
   }
 }
 
-export async function handleProactiveMessage(sessionId: string, idleCount: number) {
+export async function handleProactiveMessage(
+  sessionId: string,
+  idleCount: number,
+  messageType: "idle" | "deep_talk" = "idle"
+) {
   try {
-    console.log(`[${new Date().toISOString()}] Generating proactive message for session: ${sessionId}, idleCount: ${idleCount}`);
+    console.log(
+      `[${new Date().toISOString()}] Generating proactive message for session: ${sessionId}, idleCount: ${idleCount}`
+    );
 
     // Ambil riwayat chat terbaru dari database
     const existingHistory = await getChatHistoryFromDB(sessionId);
-    console.log(`[${new Date().toISOString()}] Loaded ${existingHistory.length} messages from DB for proactive message.`);
+    console.log(
+      `[${new Date().toISOString()}] Loaded ${
+        existingHistory.length
+      } messages from DB for proactive message.`
+    );
 
     // Buat sesi chat baru untuk pesan proaktif
     const proactiveChatSession = model.startChat({
       history: [...initialSeedHistory, ...existingHistory],
       generationConfig: {
-        maxOutputTokens: 50, // Pesan proaktif cenderung lebih pendek
+        maxOutputTokens: 150, // Pesan proaktif cenderung lebih pendek
         temperature: 1.0, // Lebih kreatif untuk pesan proaktif
         topP: 0.9,
         topK: 40,
@@ -199,29 +221,50 @@ export async function handleProactiveMessage(sessionId: string, idleCount: numbe
     });
 
     let prompt: string;
-    if (idleCount === 1) {
-      prompt = "Pengguna sudah lama tidak merespons. Berikan pesan proaktif yang singkat dan menarik untuk memulai percakapan lagi, berdasarkan riwayat chat jika memungkinkan. Jangan terlalu formal atau panjang. Contoh: 'Ren, kok diem aja? Kezi kangen nih.'";
-    } else if (idleCount === 2) {
-      prompt = "Pengguna semakin lama tidak merespons. Berikan pesan proaktif yang menunjukkan sedikit kekhawatiran dan ajakan untuk berinteraksi. Contoh: 'Ren, kamu baik-baik aja kan? Kezi khawatir nih.'";
+
+    if (messageType === "deep_talk") {
+      prompt = promptsConfig.proactive_messaging.deep_talk.instruction;
     } else {
-      prompt = "Pengguna sudah sangat lama tidak merespons. Berikan pesan proaktif yang menunjukkan kekhawatiran yang lebih jelas dan mendesak, atau ajakan untuk membalas. Contoh: 'Ren, kamu di mana? Kezi khawatir banget nih, bales dong.'";
+      // Logika pesan idle yang sudah ada
+      if (idleCount === 1) {
+        prompt = promptsConfig.proactive_messaging.idle.level_1;
+      } else if (idleCount === 2) {
+        prompt = promptsConfig.proactive_messaging.idle.level_2;
+      } else {
+        prompt = promptsConfig.proactive_messaging.idle.level_3;
+      }
     }
 
     const result = await proactiveChatSession.sendMessage(prompt);
     const response = await result.response;
-    const proactiveReply = response.text();
+    let proactiveReply = response.text();
+
+    // Membersihkan tanda kutip yang mungkin ditambahkan oleh AI di awal/akhir
+    proactiveReply = proactiveReply.trim().replace(/^"|"(?=\s*[^a-zA-Z0-9]*$)/g, "").trim();
 
     // Simpan pesan proaktif ke database
     await saveMessageToDB(sessionId, "ai", proactiveReply);
 
     // Kirim pesan proaktif ke frontend melalui WebSocket
-    sendWebSocketMessage(sessionId, { type: "proactive_message", message: proactiveReply });
+    sendWebSocketMessage(sessionId, {
+      type: "proactive_message",
+      message: proactiveReply,
+    });
 
-    console.log(`[${new Date().toISOString()}] Proactive message sent: "${proactiveReply.trim().substring(0, 100)}..."`);
-
+    console.log(
+      `[${new Date().toISOString()}] Proactive message sent: "${proactiveReply
+        .trim()
+        .substring(0, 100)}..."`
+    );
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Error generating proactive message:`, error);
+    console.error(
+      `[${new Date().toISOString()}] Error generating proactive message:`,
+      error
+    );
     // Jika gagal, kirim pesan default ke frontend
-    sendWebSocketMessage(sessionId, { type: "proactive_message", message: "Kamu masih di sana? Aku kangen ngobrol nih." });
+    sendWebSocketMessage(sessionId, {
+      type: "proactive_message",
+      message: "Kamu masih di sana? Aku kangen ngobrol nih.",
+    });
   }
 }
