@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 
 // Komponen Popup untuk Personalia
 const PersonalInfoPopup = ({

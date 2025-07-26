@@ -8,12 +8,12 @@ interface ChatMessagesProps {
     text: string;
     sender: Sender;
     created_at?: string;
-    imageUrl?: string; // Tambahkan imageUrl
+    imageUrl?: string;
   }[];
   isLoading: boolean;
   loadMoreMessages: () => void;
   hasMoreMessages: boolean;
-  shouldScrollToBottom: boolean; // Add new prop
+  shouldScrollToBottom: boolean;
 }
 
 const ChatMessages: React.FC<ChatMessagesProps> = ({
@@ -40,7 +40,7 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
     if (!container) return;
 
     const handleScroll = () => {
-      // Show load more button logic
+      // Tampilkan tombol load more dan scroll to bottom
       if (container.scrollTop <= 5 && hasMoreMessages && !isLoading) {
         setShowLoadMoreButton(true);
       } else {
@@ -68,7 +68,7 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
       ref={chatContainerRef}
       className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 relative"
     >
-      {/* Scroll to bottom button */}
+      {/* Tombol scroll ke bawah */}
       {showScrollToBottom && (
         <button
           onClick={() => {

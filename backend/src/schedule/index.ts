@@ -1,27 +1,21 @@
-
 import cron from "node-cron";
 import { handleProactiveMessage } from "../gemini";
-import { activeWebSockets, sendWebSocketMessage } from "..";
+import { activeWebSockets, sendWebSocketMessage } from "../websocket";
 
 const WIB_TIMEZONE = "Asia/Jakarta";
 
 function initializeScheduledJobs() {
-  // Schedule for Good Morning message (6 AM WIB)
+  // Schedule for Good Morning message (7 AM WIB - for testing)
   cron.schedule(
     "0 6 * * *",
-    () => {
+    async () => {
       console.log(
         `[${new Date().toISOString()}] Running scheduled job: Good Morning`
       );
       if (activeWebSockets.size > 0) {
         for (const sessionId of activeWebSockets.keys()) {
           console.log(`Sending Good Morning message to session: ${sessionId}`);
-          sendWebSocketMessage(sessionId, {
-            type: "proactive_message",
-            message: "Selamat pagi! Semoga harimu menyenangkan! ✨",
-            sender: "ai",
-            timestamp: new Date().toISOString(),
-          });
+          await handleProactiveMessage(sessionId, 0, "good_morning");
         }
       }
     },

@@ -1,365 +1,220 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import axios from "axios";
+import { useState, useEffect, useCallback } from "react";
 import AuthModal from "./components/AuthModal";
 import PersonalInfoPopup from "./components/PersonalInfoPopup";
 import ChatHeader from "./components/ChatHeader";
 import ChatMessages from "./components/ChatMessages";
 import ChatInput from "./components/ChatInput";
-
-// Tipe pengirim pesan, bisa user atau AI
-type Sender = "user" | "ai";
-
-interface Message {
-  text: string;
-  sender: Sender;
-  created_at?: string; // Tambahkan created_at
-  imageUrl?: string; // Tambahkan imageUrl opsional
-}
+import { useWebSocket } from "./hooks/useWebSocket";
+import { authService, chatService } from "./services/api";
+import { useIdleTimer } from "./utils/idleTimer";
+import type {
+  AuthStatus,
+  Message,
+  ImageState,
+  WebSocketMessage,
+} from "./types";
 
 // Komponen utama aplikasi chat
 function App() {
-  const [authStatus, setAuthStatus] = useState<
-    "pending" | "authenticated" | "unauthenticated"
-  >("pending");
-  console.log(
-    "[App.tsx Render] App component rendering. Current authStatus:",
-    authStatus
-  );
-  // State untuk menyimpan daftar pesan chat
+  const [authStatus, setAuthStatus] = useState<AuthStatus>("pending");
   const [messages, setMessages] = useState<Message[]>([]);
   const [hasMoreMessages, setHasMoreMessages] = useState<boolean>(true);
   const [oldestMessageTimestamp, setOldestMessageTimestamp] = useState<
     string | null
   >(null);
-  // State untuk input pesan user
   const [inputMessage, setInputMessage] = useState<string>("");
-  // State untuk gambar yang akan diunggah
-  const [image, setImage] = useState<{
-    base64: string | null;
-    file: File | null;
-    mimeType: string | null;
-  }>({
+  const [image, setImage] = useState<ImageState>({
     base64: null,
     file: null,
     mimeType: null,
   });
-  // State untuk status loading saat menunggu balasan AI
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [shouldScrollToBottom, setShouldScrollToBottom] =
-    useState<boolean>(true); // New state for scroll control
-  // State untuk popup personalia
+    useState<boolean>(true);
   const [isPopupOpen, setIsPopupOpen] = useState<boolean>(false);
-  const [websocket, setWebsocket] = useState<WebSocket | null>(null);
-  const idleTimerRef = useRef<number | null>(null);
-  const IDLE_TIMEOUT = 30 * 60 * 1000; // 30 menit dalam milidetik
-  const [idleCount, setIdleCount] = useState(0); // New state for idle count
+  const [idleCount, setIdleCount] = useState(0);
 
   // Nama user yang diizinkan untuk chat dengan AI
   const USER_NAME = "Muhammad Umar Baihaqi";
 
-  // Fungsi untuk mereset timer idle
-  const resetIdleTimer = useCallback(() => {
-    if (idleTimerRef.current) {
-      clearTimeout(idleTimerRef.current);
-    }
-    idleTimerRef.current = window.setTimeout(async () => {
-      console.log("Idle detected! Triggering proactive message.");
-      const token = localStorage.getItem("authToken");
-      const newIdleCount = idleCount + 1; // Increment idle count
-      setIdleCount(newIdleCount); // Update state
+  // Custom hooks
+  const { resetIdleTimer, clearIdleTimer } = useIdleTimer(
+    idleCount,
+    setIdleCount
+  );
 
-      if (token) {
-        try {
-          await axios.post(
-            "http://localhost:3000/api/trigger-proactive",
-            {
-              idleCount: newIdleCount, // Send idle count to backend
-            },
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            }
-          );
-        } catch (error) {
-          console.error("Error triggering proactive message:", error);
-        }
-      }
-    }, IDLE_TIMEOUT);
-  }, [IDLE_TIMEOUT, idleCount]); // Add idleCount to dependencies
-
-  // Efek untuk menginisialisasi WebSocket dan mendengarkan aktivitas pengguna
-  useEffect(() => {
-    let ws: WebSocket | null = null;
-    let reconnectTimeout: number | null = null;
-
-    const connectWebSocket = () => {
-      if (
-        ws &&
-        (ws.readyState === WebSocket.OPEN ||
-          ws.readyState === WebSocket.CONNECTING)
-      ) {
-        return; // Already connected or connecting
-      }
-      ws = new WebSocket("ws://localhost:3000/api/connect-websocket");
-
-      ws.onopen = () => {
-        console.log("WebSocket connected!");
-        setWebsocket(ws);
-        resetIdleTimer(); // Reset timer saat koneksi terbuka
-        setIdleCount(0); // Reset idle count on new connection
-        if (reconnectTimeout) {
-          clearTimeout(reconnectTimeout);
-          reconnectTimeout = null;
-        }
-      };
-
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === "proactive_message") {
+  // WebSocket message handler
+  const handleWebSocketMessage = useCallback(
+    (data: unknown) => {
+      const wsMessage = data as WebSocketMessage;
+      if (wsMessage.type === "proactive_message") {
+        if (wsMessage.message && wsMessage.message.trim() !== "") {
           setMessages((prev) => [
             ...prev,
-            { text: data.message, sender: "ai" },
+            { text: wsMessage.message, sender: "ai" },
           ]);
           setShouldScrollToBottom(true);
-          resetIdleTimer(); // Reset timer setelah menerima pesan proaktif
-          setIdleCount(0); // Reset idle count after receiving proactive message
+          resetIdleTimer();
+          setIdleCount(0);
         }
-      };
+      }
+    },
+    [resetIdleTimer, setIdleCount]
+  );
 
-      ws.onclose = () => {
-        console.log("WebSocket disconnected. Attempting to reconnect...");
-        setWebsocket(null);
-        if (idleTimerRef.current) {
-          clearTimeout(idleTimerRef.current);
-        }
-        // Try to reconnect after a delay
-        reconnectTimeout = window.setTimeout(connectWebSocket, 3000); // Reconnect after 3 seconds
-      };
-
-      ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        ws?.close(); // Close to trigger onclose and reconnect logic
-      };
-    };
-
-    connectWebSocket(); // Initial connection
-
-    // Mendengarkan aktivitas pengguna
-    const handleActivity = () => {
+  // WebSocket hooks
+  useWebSocket({
+    onMessage: handleWebSocketMessage,
+    onOpen: () => {
       resetIdleTimer();
-      setIdleCount(0); // Reset idle count on user activity
-    };
+      setIdleCount(0);
+    },
+    onClose: clearIdleTimer,
+  });
 
-    window.addEventListener("mousemove", handleActivity);
-    window.addEventListener("keydown", handleActivity);
-    window.addEventListener("scroll", handleActivity);
-
-    return () => {
-      if (ws) {
-        ws.close();
-      }
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-      window.removeEventListener("mousemove", handleActivity);
-      window.removeEventListener("keydown", handleActivity);
-      window.removeEventListener("scroll", handleActivity);
-      if (idleTimerRef.current) {
-        clearTimeout(idleTimerRef.current);
-      }
-    };
-  }, [resetIdleTimer, setMessages, setWebsocket]);
-
+  // Token verification effect
   useEffect(() => {
     const verifyToken = async () => {
       const token = localStorage.getItem("authToken");
-      console.log("Verifying token... Token found:", !!token);
       if (token) {
         try {
-          const response = await axios.post(
-            "http://localhost:3000/api/verify-token",
-            { token }
-          );
-          if (response.data.valid) {
+          const response = await authService.verifyToken(token);
+          if (response.valid) {
             setAuthStatus("authenticated");
-            console.log("Token valid. Auth status: authenticated");
           } else {
             setAuthStatus("unauthenticated");
             localStorage.removeItem("authToken");
-            console.log("Token invalid. Auth status: unauthenticated");
           }
         } catch (error) {
           console.error("Token verification failed", error);
           setAuthStatus("unauthenticated");
           localStorage.removeItem("authToken");
-          console.log(
-            "Token verification failed. Auth status: unauthenticated"
-          );
         }
       } else {
         setAuthStatus("unauthenticated");
-        console.log("No token found. Auth status: unauthenticated");
       }
     };
 
-    // Initial verification
-    console.log(
-      "[App.tsx verifyToken useEffect] Initial verification triggered."
-    );
-    verifyToken();
-
-    // Set up interval for periodic verification
+    // Delay initial verification to allow server to start
+    const timer = setTimeout(verifyToken, 1000);
     const intervalId = setInterval(verifyToken, 10800000); // Check every 3 hours
-
-    // Cleanup function
     return () => {
+      clearTimeout(timer);
       clearInterval(intervalId);
     };
   }, []);
 
-  // Fungsi untuk memuat pesan dari backend
+  // Fetch messages effect
   const fetchMessages = useCallback(
     async (beforeTimestamp: string | null = null) => {
       try {
         const token = localStorage.getItem("authToken");
-        if (!token) {
-          console.warn("No auth token found. Cannot fetch messages.");
-          return;
-        }
+        if (!token) return;
 
-        let url = `http://localhost:3000/api/chat-history?limit=20`;
-        if (beforeTimestamp) {
-          url += `&before=${beforeTimestamp}`;
-        }
+        const fetchedMessages = await chatService.getChatHistory(
+          20,
+          beforeTimestamp ?? undefined
+        );
 
-        console.log(`[fetchMessages] Requesting URL: ${url}`);
-        const response = await axios.get(url, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        const fetchedMessages: Message[] = response.data
+        const filteredMessages: Message[] = fetchedMessages
           .filter((msg: Message) => msg !== null && msg !== undefined)
           .map((msg: Message) => ({
             text: msg.text,
             sender: msg.sender,
             created_at: msg.created_at,
-            imageUrl: msg.imageUrl, // Tambahkan imageUrl di sini
+            imageUrl: msg.imageUrl,
           }));
 
-        console.log(
-          `[fetchMessages] Fetched ${fetchedMessages.length} messages.`
-        );
-
-        if (fetchedMessages.length < 20) {
+        if (filteredMessages.length < 20) {
           setHasMoreMessages(false);
-          console.log("[fetchMessages] Setting hasMoreMessages to false.");
         } else {
-          setHasMoreMessages(true); // Ensure it's true if 20 messages are returned
-          console.log("[fetchMessages] Setting hasMoreMessages to true.");
+          setHasMoreMessages(true);
         }
 
-        if (fetchedMessages.length > 0) {
+        if (filteredMessages.length > 0) {
           const newOldestTimestamp =
-            fetchedMessages[fetchedMessages.length - 1].created_at || null;
+            filteredMessages[filteredMessages.length - 1].created_at || null;
           setOldestMessageTimestamp(newOldestTimestamp);
-          console.log(
-            `[fetchMessages] Oldest message timestamp updated to: ${newOldestTimestamp}`
-          );
         } else {
           setOldestMessageTimestamp(null);
-          console.log(
-            "[fetchMessages] No messages fetched, oldestMessageTimestamp set to null."
-          );
         }
 
-        // Add new messages to the beginning of the messages array, ensuring chronological order
-        const newMessages = (fetchedMessages || []).reverse(); // Keep newMessages for clarity if needed later
-        console.log("New messages to be added (reversed):", newMessages); // Log newMessages
+        const newMessages = filteredMessages.reverse();
         setMessages((prevMessages) => [...newMessages, ...prevMessages]);
-        setShouldScrollToBottom(false); // Don't scroll to bottom when loading old messages
-        resetIdleTimer(); // Reset idle timer after fetching messages
+        setShouldScrollToBottom(false);
       } catch (error) {
         console.error("Error fetching messages:", error);
-        setHasMoreMessages(false); // Set to false on error to prevent infinite loading attempts
-        setOldestMessageTimestamp(null); // Clear timestamp on error
+        setHasMoreMessages(false);
+        setOldestMessageTimestamp(null);
       }
     },
-    [setMessages, setHasMoreMessages, setOldestMessageTimestamp, resetIdleTimer]
+    []
   );
 
-  // Pemuatan pesan awal saat komponen dimuat
+  // Load initial messages
   useEffect(() => {
-    console.log("[App.tsx useEffect] authStatus:", authStatus);
     if (authStatus === "authenticated") {
-      // Muat pesan terbaru saat aplikasi dimuat
-      console.log(
-        "[App.tsx useEffect] Calling fetchMessages for initial load."
-      );
       fetchMessages();
     }
   }, [authStatus, fetchMessages]);
 
-  // Fungsi untuk memuat pesan lebih lama (saat scroll ke atas)
+  // Load more messages function
   const loadMoreMessages = () => {
-    console.log("loadMoreMessages called.");
     if (hasMoreMessages && oldestMessageTimestamp) {
-      console.log("Fetching more messages before:", oldestMessageTimestamp);
       fetchMessages(oldestMessageTimestamp);
     }
   };
 
-  // Fungsi untuk mengirim pesan user ke backend dan menerima balasan AI
+  // Send message function
   const sendMessage = async () => {
     if ((inputMessage.trim() === "" && !image.base64) || isLoading) return;
 
     const userMessage: Message = {
       text: inputMessage,
-      sender: "user" as Sender,
-      ...(image.base64 && { imageUrl: `data:${image.mimeType || "image/jpeg"};base64,${image.base64}` }),
+      sender: "user",
+      ...(image.base64 && {
+        imageUrl: `data:${image.mimeType || "image/jpeg"};base64,${
+          image.base64
+        }`,
+      }),
     };
 
-    // Menambahkan pesan user ke state
     setMessages((prev) => [...prev, userMessage]);
     setInputMessage("");
-    const imageToSend = image.base64; // Simpan gambar untuk dikirim
-    const mimeTypeToSend = image.mimeType; // Simpan mimeType untuk dikirim
-    setImage({ base64: null, file: null, mimeType: null }); // Reset state gambar di UI
+    const imageToSend = image.base64;
+    const mimeTypeToSend = image.mimeType;
+    setImage({ base64: null, file: null, mimeType: null });
     setIsLoading(true);
-    setShouldScrollToBottom(true); // Scroll to bottom when sending new message
+    setShouldScrollToBottom(true);
 
     try {
-      const token = localStorage.getItem("authToken");
-      const response = await axios.post(
-        "http://localhost:3000/api/chat",
-        {
-          message: inputMessage,
-          userName: USER_NAME,
-          image: imageToSend, // Kirim gambar base64
-          mimeType: mimeTypeToSend, // Kirim mimeType
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+      const response = await chatService.sendMessage(
+        inputMessage,
+        USER_NAME,
+        imageToSend,
+        mimeTypeToSend
       );
-      const aiReply = response.data.reply;
-      setMessages((prev) => [...prev, { text: aiReply, sender: "ai" }]);
-      resetIdleTimer(); // Reset idle timer after AI replies
+      const aiReply = response.reply;
+
+      if (aiReply && aiReply.trim() !== "") {
+        setMessages((prev) => [...prev, { text: aiReply, sender: "ai" }]);
+      }
     } catch (error) {
       console.error("Error sending message:", error);
       let errorMessage = "Sorry, something went wrong while contacting the AI.";
-      if (axios.isAxiosError(error) && error.response) {
+
+      if (error && typeof error === "object" && "response" in error) {
+        const axiosError = error as {
+          response?: { data?: { error?: string } };
+        };
         errorMessage = `Error: ${
-          error.response.data.error ||
+          axiosError.response?.data?.error ||
           "There was an issue with the backend server."
         }`;
       } else if (error instanceof Error) {
         errorMessage = `Error: ${error.message}`;
       }
+
       setMessages((prev) => [
         ...prev,
         {
@@ -370,6 +225,7 @@ function App() {
       ]);
     } finally {
       setIsLoading(false);
+      resetIdleTimer();
     }
   };
 
@@ -386,18 +242,14 @@ function App() {
       <AuthModal
         onAuthSuccess={() => {
           setAuthStatus("authenticated");
-          console.log(
-            "[App.tsx AuthModal] onAuthSuccess called. Auth status set to authenticated."
-          );
         }}
       />
     );
   }
 
-  // Render tampilan utama aplikasi chat
   return (
     <div className="flex flex-col h-screen font-sans antialiased bg-gray-900 text-gray-100">
-      {/* Background gambar dan efek blur */}
+      {/* Background video dan efek blur */}
       <video
         className="absolute inset-0 w-full h-full object-cover transition-all duration-500"
         autoPlay
@@ -437,5 +289,4 @@ function App() {
   );
 }
 
-// Ekspor komponen utama
 export default App;

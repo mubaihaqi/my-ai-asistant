@@ -1,28 +1,25 @@
 import { Pool, type PoolClient } from "pg";
 import { DATABASE_URL } from "../config";
 
-// Parse the DATABASE_URL to get individual connection parameters
+// Parse DATABASE_URL dan setup connection pool
 const dbUrl = new URL(DATABASE_URL as string);
 
 export const pool = new Pool({
   host: dbUrl.hostname,
   port: parseInt(dbUrl.port) || 5432,
-  database: dbUrl.pathname.slice(1), // Remove the leading '/'
+  database: dbUrl.pathname.slice(1),
   user: dbUrl.username,
   password: dbUrl.password,
-  ssl: {
-    rejectUnauthorized: false,
-  },
-  // Add connection timeout and retry options
+  ssl: { rejectUnauthorized: false },
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
   max: 10,
 });
 
-// Track database connection status
+// Track status koneksi database
 export let isDatabaseConnected = false;
 
-// Test koneksi database (opsional, tapi bagus untuk debugging awal)
+// Test koneksi database
 pool
   .connect()
   .then((client: PoolClient) => {
@@ -30,7 +27,7 @@ pool
       `[${new Date().toISOString()}] Connected to PostgreSQL database (Supabase) via pg!`
     );
     isDatabaseConnected = true;
-    client.release(); // Lepaskan client kembali ke pool
+    client.release();
   })
   .catch((err: Error) => {
     console.error(
@@ -44,7 +41,7 @@ pool
     // Don't exit - continue without database functionality
   });
 
-// Fungsi untuk mengambil riwayat chat dari database
+// Simpan pesan ke database
 export async function saveMessageToDB(
   sessionId: string,
   sender: "user" | "ai",
@@ -60,14 +57,23 @@ export async function saveMessageToDB(
   }
   try {
     const createdAt = new Date().toISOString();
-    const params = [sessionId, sender, text, imageUrl, imageMimeType, createdAt];
-    console.log(`[saveMessageToDB] Attempting to save with params: ${JSON.stringify(params)}`);
+    const params = [
+      sessionId,
+      sender,
+      text,
+      imageUrl,
+      imageMimeType,
+      createdAt,
+    ];
     await pool.query(
       `INSERT INTO messages (session_id, sender, text, image_url, image_mime_type, created_at) VALUES ($1, $2, $3, $4, $5, $6)`,
       params
     );
     console.log(
-      `[${new Date().toISOString()}] Message from ${sender} saved to Supabase.`
+      `[${new Date().toISOString()}] Message saved: ${sender} -> "${text.substring(
+        0,
+        50
+      )}${text.length > 50 ? "..." : ""}"`
     );
   } catch (dbError) {
     console.error(
@@ -79,8 +85,8 @@ export async function saveMessageToDB(
 
 export async function getChatHistoryFromDB(
   sessionId: string,
-  limit: number = 20, // Default limit for fetching messages
-  beforeTimestamp: string | null = null // ISO string for timestamp
+  limit: number = 20,
+  beforeTimestamp: string | null = null
 ): Promise<any[]> {
   if (!isDatabaseConnected) {
     console.warn(
@@ -105,23 +111,29 @@ export async function getChatHistoryFromDB(
 
     const res = await pool.query(query, params);
 
-    // Format data agar sesuai dengan format history yang diharapkan oleh Gemini API
-    // Urutkan kembali dari yang paling lama ke yang terbaru untuk Gemini API
-    return res.rows
-      .reverse()
-      .map((row) => ({
-        role: row.sender === "user" ? "user" : "model", // 'user' atau 'model'
-        parts: [
-          { text: row.text },
-          ...(row.image_url && row.image_mime_type ? [{ inlineData: { mimeType: row.image_mime_type, data: row.image_url } }] : []),
-        ],
-      }));
+    // Format data untuk Gemini API (dari lama ke baru)
+    return res.rows.reverse().map((row) => ({
+      role: row.sender === "user" ? "user" : "model",
+      parts: [
+        { text: row.text },
+        ...(row.image_url && row.image_mime_type
+          ? [
+              {
+                inlineData: {
+                  mimeType: row.image_mime_type,
+                  data: row.image_url,
+                },
+              },
+            ]
+          : []),
+      ],
+    }));
   } catch (error) {
     console.error(
       `[${new Date().toISOString()}] Error fetching chat history from DB:`,
       error
     );
-    return []; // Kembalikan array kosong jika ada error
+    return [];
   }
 }
 
@@ -152,14 +164,16 @@ export async function getMessagesForFrontend(
     }
 
     const res = await pool.query(query, params);
-    console.log(`[getMessagesForFrontend] Executing query: ${query} with params: ${JSON.stringify(params)}`);
 
     // Return messages in descending order (newest first) for frontend display
     return res.rows.map((row) => ({
       text: row.text,
       sender: row.sender,
       created_at: row.created_at,
-      imageUrl: row.image_url && row.image_mime_type ? `data:${row.image_mime_type};base64,${row.image_url}` : undefined, // Tambahkan imageUrl
+      imageUrl:
+        row.image_url && row.image_mime_type
+          ? `data:${row.image_mime_type};base64,${row.image_url}`
+          : undefined, // Tambahkan imageUrl
     }));
   } catch (error) {
     console.error(

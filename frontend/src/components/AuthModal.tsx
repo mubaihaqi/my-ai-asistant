@@ -15,7 +15,7 @@ const AuthModal = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
     e.preventDefault();
     setError("");
     try {
-      const response = await axios.post("http://localhost:3000/api/auth", {
+      const response = await axios.post(import.meta.env.VITE_BACKEND_URL + "/api/auth", {
         name: name.trim(),
       });
       if (response.data.success && response.data.token) {

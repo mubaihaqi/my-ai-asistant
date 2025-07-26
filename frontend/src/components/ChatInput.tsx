@@ -7,7 +7,11 @@ interface ChatInputProps {
   sendMessage: () => void;
   isLoading: boolean;
   image: { base64: string | null; file: File | null; mimeType: string | null };
-  setImage: (image: { base64: string | null; file: File | null; mimeType: string | null }) => void;
+  setImage: (image: {
+    base64: string | null;
+    file: File | null;
+    mimeType: string | null;
+  }) => void;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -21,6 +25,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Konversi file gambar ke base64
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -35,6 +40,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
+  // Handle klik tombol attach dan remove image
   const handleAttachClick = () => {
     fileInputRef.current?.click();
   };
@@ -66,7 +72,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
           {image.base64 && (
             <div className="relative mb-2 w-24 h-24 rounded-md overflow-hidden">
               <img
-                src={`data:${image.mimeType || "image/jpeg"};base64,${image.base64}`}
+                src={`data:${image.mimeType || "image/jpeg"};base64,${
+                  image.base64
+                }`}
                 alt="Preview"
                 className="w-full h-full object-cover"
               />
